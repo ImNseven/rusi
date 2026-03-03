@@ -20,18 +20,14 @@ function toBestGrade(rules, percent) {
 async function generateUniqueShortCode() {
   for (let i = 0; i < 30; i += 1) {
     const code = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
-    const exists = await prisma.testAccessLink.findUnique({
-      where: { shortCode: code },
+    const exists = await prisma.testAccessLink.findFirst({
+      where: { token: { startsWith: `${code}-` } },
       select: { id: true }
     });
     if (!exists) return code;
   }
 
   throw new Error("Unable to generate unique short code");
-}
-
-function isShortCodeColumnMissing(error) {
-  return error?.code === "P2022" && String(error?.meta?.column || "").includes("TestAccessLink.shortCode");
 }
 
 router.get("/", requireAuth, async (req, res) => {
@@ -119,30 +115,23 @@ router.post("/access-code", requireAuth, async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Code must contain exactly 5 digits" });
 
-  let link;
-  try {
-    link = await prisma.testAccessLink.findUnique({
-      where: { shortCode: parsed.data.code },
-      include: {
-        test: {
-          include: {
-            questions: {
-              orderBy: { sortOrder: "asc" },
-              include: { options: { select: { id: true, text: true } } }
-            }
+  const link = await prisma.testAccessLink.findFirst({
+    where: { token: { startsWith: `${parsed.data.code}-` } },
+    include: {
+      test: {
+        include: {
+          questions: {
+            orderBy: { sortOrder: "asc" },
+            include: { options: { select: { id: true, text: true } } }
           }
-        },
-        uses: {
-          where: { userId: req.user.sub }
         }
+      },
+      uses: {
+        where: { userId: req.user.sub }
       }
-    });
-  } catch (error) {
-    if (isShortCodeColumnMissing(error)) {
-      return res.status(500).json({ error: "Требуется миграция базы данных: добавьте поле shortCode" });
-    }
-    throw error;
-  }
+    },
+    orderBy: { createdAt: "desc" }
+  });
 
   if (!link) return res.status(404).json({ error: "Код не найден" });
   if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
@@ -156,6 +145,54 @@ router.post("/access-code", requireAuth, async (req, res) => {
     token: link.token,
     test: link.test
   });
+});
+
+router.post("/:id/check-answer", requireAuth, async (req, res) => {
+  const schema = z.object({
+    questionId: z.string().min(1),
+    optionId: z.string().min(1),
+    accessToken: z.string().optional()
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const { questionId, optionId, accessToken } = parsed.data;
+  const test = await prisma.test.findUnique({
+    where: { id: req.params.id },
+    include: {
+      questions: {
+        include: {
+          options: true
+        }
+      }
+    }
+  });
+
+  if (!test) return res.status(404).json({ error: "Test not found" });
+
+  if (!test.isPublic) {
+    if (!accessToken) return res.status(403).json({ error: "Private test requires access link token" });
+    const link = await prisma.testAccessLink.findUnique({
+      where: { token: accessToken },
+      include: { uses: { where: { userId: req.user.sub } } }
+    });
+    if (!link || link.testId !== test.id) {
+      return res.status(403).json({ error: "Invalid access link token" });
+    }
+    if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
+      return res.status(410).json({ error: "Access link expired" });
+    }
+    if (link.maxUses && link.uses.length >= link.maxUses) {
+      return res.status(403).json({ error: "Attempt already used for this test link" });
+    }
+  }
+
+  const question = test.questions.find((q) => q.id === questionId);
+  if (!question) return res.status(400).json({ error: "Question does not belong to this test" });
+  const selectedOption = question.options.find((o) => o.id === optionId);
+  if (!selectedOption) return res.status(400).json({ error: "Option does not belong to this question" });
+
+  return res.json({ isCorrect: Boolean(selectedOption.isCorrect) });
 });
 
 router.post("/:id/submit", requireAuth, async (req, res) => {
@@ -370,27 +407,18 @@ router.post("/admin/create-link", requireAuth, async (req, res) => {
   if (!test) return res.status(404).json({ error: "Test not found" });
   if (test.createdById !== req.user.sub) return res.status(403).json({ error: "Forbidden" });
 
-  const token = crypto.randomBytes(24).toString("hex");
-  let link;
-  try {
-    const shortCode = await generateUniqueShortCode();
-    link = await prisma.testAccessLink.create({
-      data: {
-        testId,
-        token,
-        shortCode,
-        maxUses: 1,
-        expiresAt: expiresAt ? new Date(expiresAt) : null
-      }
-    });
-  } catch (error) {
-    if (isShortCodeColumnMissing(error)) {
-      return res.status(500).json({ error: "Требуется миграция базы данных: добавьте поле shortCode" });
+  const shortCode = await generateUniqueShortCode();
+  const token = `${shortCode}-${crypto.randomBytes(24).toString("hex")}`;
+  const link = await prisma.testAccessLink.create({
+    data: {
+      testId,
+      token,
+      maxUses: 1,
+      expiresAt: expiresAt ? new Date(expiresAt) : null
     }
-    throw error;
-  }
+  });
 
-  return res.json({ token: link.token, shortCode: link.shortCode });
+  return res.json({ token: link.token, shortCode });
 });
 
 export default router;

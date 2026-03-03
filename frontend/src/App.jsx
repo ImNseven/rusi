@@ -591,7 +591,7 @@ function useTestState(loadFn) {
   return { test, answers, setAnswers, result, setResult, error };
 }
 
-function QuestionCard({ q, selected, onSelect }) {
+function QuestionCard({ q, selected, onSelect, disabled }) {
   return (
     <article className="card">
       <h3>{q.text}</h3>
@@ -604,6 +604,7 @@ function QuestionCard({ q, selected, onSelect }) {
               checked={selected === option.id}
               onChange={() => onSelect(q.id, option.id)}
               name={q.id}
+              disabled={disabled}
             />
             {option.text}
           </label>
@@ -618,9 +619,48 @@ function SolveTestPage() {
   const navigate = useNavigate();
   const loadFn = useMemo(() => () => api(`/tests/${id}`), [id]);
   const { test, answers, setAnswers, result, setResult, error } = useTestState(loadFn);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [checkedByQuestion, setCheckedByQuestion] = useState({});
+  const [feedback, setFeedback] = useState(null);
+  const [actionError, setActionError] = useState("");
+  const [checking, setChecking] = useState(false);
 
-  async function submit() {
-    const payload = test.questions
+  const questions = test?.questions || [];
+  const currentQuestion = questions[currentIndex];
+  const answeredCount = Object.keys(checkedByQuestion).length;
+  const remainingCount = questions.length - answeredCount;
+  const selectedOptionId = currentQuestion ? answers[currentQuestion.id] : null;
+  const isCurrentChecked = Boolean(currentQuestion && checkedByQuestion[currentQuestion.id]);
+  const isLastQuestion = currentIndex === questions.length - 1;
+
+  async function checkCurrentAnswer() {
+    if (!currentQuestion) return;
+    if (!selectedOptionId) {
+      setActionError("Выберите вариант ответа");
+      return;
+    }
+
+    setActionError("");
+    setChecking(true);
+    try {
+      const response = await api(`/tests/${id}/check-answer`, {
+        method: "POST",
+        body: JSON.stringify({
+          questionId: currentQuestion.id,
+          optionId: selectedOptionId
+        })
+      });
+      setFeedback(response.isCorrect ? "Правильно" : "Неправильно");
+      setCheckedByQuestion((prev) => ({ ...prev, [currentQuestion.id]: true }));
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function submitFinal() {
+    const payload = questions
       .map((q) => ({ questionId: q.id, optionId: answers[q.id] }))
       .filter((a) => Boolean(a.optionId));
 
@@ -658,22 +698,56 @@ function SolveTestPage() {
           </article>
         ) : (
           <>
-            {test.questions.map((q) => (
+            <article className="card">
+              <p>
+                Отмечено: {answeredCount} из {questions.length} | Осталось: {remainingCount}
+              </p>
+            </article>
+
+            {currentQuestion && (
               <QuestionCard
-                key={q.id}
-                q={q}
-                selected={answers[q.id]}
-                onSelect={(questionId, optionId) =>
+                key={currentQuestion.id}
+                q={currentQuestion}
+                selected={answers[currentQuestion.id]}
+                disabled={isCurrentChecked}
+                onSelect={(questionId, optionId) => {
+                  setActionError("");
+                  setFeedback(null);
                   setAnswers((prev) => ({
                     ...prev,
                     [questionId]: optionId
-                  }))
-                }
+                  }));
+                }}
               />
-            ))}
-            <button className="primaryBtn" onClick={submit}>
-              Отправить
-            </button>
+            )}
+
+            {feedback && <p className={feedback === "Правильно" ? "okText" : "errorText"}>{feedback}</p>}
+            {actionError && <p className="errorText">{actionError}</p>}
+
+            {!isCurrentChecked && (
+              <button className="primaryBtn" onClick={checkCurrentAnswer} disabled={checking}>
+                {checking ? "Проверяем..." : "Проверить ответ"}
+              </button>
+            )}
+
+            {isCurrentChecked && !isLastQuestion && (
+              <button
+                className="primaryBtn"
+                onClick={() => {
+                  setCurrentIndex((prev) => prev + 1);
+                  setFeedback(null);
+                  setActionError("");
+                }}
+              >
+                Следующий вопрос
+              </button>
+            )}
+
+            {isCurrentChecked && isLastQuestion && (
+              <button className="primaryBtn" onClick={submitFinal}>
+                Посмотреть результаты
+              </button>
+            )}
           </>
         )}
       </main>
@@ -686,9 +760,49 @@ function PrivateTestPage() {
   const navigate = useNavigate();
   const loadFn = useMemo(() => () => api(`/tests/access/${token}`, { method: "POST" }), [token]);
   const { test, answers, setAnswers, result, setResult, error } = useTestState(loadFn);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [checkedByQuestion, setCheckedByQuestion] = useState({});
+  const [feedback, setFeedback] = useState(null);
+  const [actionError, setActionError] = useState("");
+  const [checking, setChecking] = useState(false);
 
-  async function submit() {
-    const payload = test.questions
+  const questions = test?.questions || [];
+  const currentQuestion = questions[currentIndex];
+  const answeredCount = Object.keys(checkedByQuestion).length;
+  const remainingCount = questions.length - answeredCount;
+  const selectedOptionId = currentQuestion ? answers[currentQuestion.id] : null;
+  const isCurrentChecked = Boolean(currentQuestion && checkedByQuestion[currentQuestion.id]);
+  const isLastQuestion = currentIndex === questions.length - 1;
+
+  async function checkCurrentAnswer() {
+    if (!currentQuestion) return;
+    if (!selectedOptionId) {
+      setActionError("Выберите вариант ответа");
+      return;
+    }
+
+    setActionError("");
+    setChecking(true);
+    try {
+      const response = await api(`/tests/${test.id}/check-answer`, {
+        method: "POST",
+        body: JSON.stringify({
+          questionId: currentQuestion.id,
+          optionId: selectedOptionId,
+          accessToken: token
+        })
+      });
+      setFeedback(response.isCorrect ? "Правильно" : "Неправильно");
+      setCheckedByQuestion((prev) => ({ ...prev, [currentQuestion.id]: true }));
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function submitFinal() {
+    const payload = questions
       .map((q) => ({ questionId: q.id, optionId: answers[q.id] }))
       .filter((a) => Boolean(a.optionId));
 
@@ -725,22 +839,56 @@ function PrivateTestPage() {
           </article>
         ) : (
           <>
-            {test.questions.map((q) => (
+            <article className="card">
+              <p>
+                Отмечено: {answeredCount} из {questions.length} | Осталось: {remainingCount}
+              </p>
+            </article>
+
+            {currentQuestion && (
               <QuestionCard
-                key={q.id}
-                q={q}
-                selected={answers[q.id]}
-                onSelect={(questionId, optionId) =>
+                key={currentQuestion.id}
+                q={currentQuestion}
+                selected={answers[currentQuestion.id]}
+                disabled={isCurrentChecked}
+                onSelect={(questionId, optionId) => {
+                  setActionError("");
+                  setFeedback(null);
                   setAnswers((prev) => ({
                     ...prev,
                     [questionId]: optionId
-                  }))
-                }
+                  }));
+                }}
               />
-            ))}
-            <button className="primaryBtn" onClick={submit}>
-              Отправить
-            </button>
+            )}
+
+            {feedback && <p className={feedback === "Правильно" ? "okText" : "errorText"}>{feedback}</p>}
+            {actionError && <p className="errorText">{actionError}</p>}
+
+            {!isCurrentChecked && (
+              <button className="primaryBtn" onClick={checkCurrentAnswer} disabled={checking}>
+                {checking ? "Проверяем..." : "Проверить ответ"}
+              </button>
+            )}
+
+            {isCurrentChecked && !isLastQuestion && (
+              <button
+                className="primaryBtn"
+                onClick={() => {
+                  setCurrentIndex((prev) => prev + 1);
+                  setFeedback(null);
+                  setActionError("");
+                }}
+              >
+                Следующий вопрос
+              </button>
+            )}
+
+            {isCurrentChecked && isLastQuestion && (
+              <button className="primaryBtn" onClick={submitFinal}>
+                Посмотреть результаты
+              </button>
+            )}
           </>
         )}
       </main>
