@@ -258,6 +258,13 @@ textarea {
   padding: 10px 12px;
 }
 
+.answerAuditRow {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+  display: grid;
+  gap: 4px;
+}
+
 .hintImage {
   width: 100%;
   max-width: 280px;

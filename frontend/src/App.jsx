@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api, getTelegramInitData } from "./api";
 
@@ -7,7 +7,7 @@ function displayName(user) {
 }
 
 function typeLabel(kind) {
-  return kind === "CARDS" ? "РљР°СЂС‚РѕС‡РєРё" : "РўРµСЃС‚";
+  return kind === "CARDS" ? "Карточки" : "Тест";
 }
 
 function useSession() {
@@ -29,7 +29,7 @@ function useSession() {
     }
 
     if (!initData) {
-      setError("РћС‚РєСЂРѕР№ WebApp РёР· Telegram Р±РѕС‚Р°, С‡С‚РѕР±С‹ Р°РІС‚РѕСЂРёР·РѕРІР°С‚СЊСЃСЏ.");
+      setError("Открой WebApp из Telegram бота, чтобы авторизоваться.");
       setLoading(false);
       return;
     }
@@ -54,11 +54,11 @@ function Shell({ user }) {
   const [activeTab, setActiveTab] = useState("tests");
 
   const tabs = [
-    { key: "tests", label: "РўРµСЃС‚С‹" },
-    { key: "find", label: "РќР°Р№С‚Рё С‚РµСЃС‚" },
-    { key: "profile", label: "РњРѕР№ РїСЂРѕС„РёР»СЊ" }
+    { key: "tests", label: "Тесты" },
+    { key: "find", label: "Найти тест" },
+    { key: "profile", label: "Мой профиль" }
   ];
-  if (user.role === "ADMIN") tabs.push({ key: "add", label: "Р”РѕР±Р°РІРёС‚СЊ" });
+  if (user.role === "ADMIN") tabs.push({ key: "add", label: "Добавить" });
 
   return (
     <div className="appShell">
@@ -97,7 +97,7 @@ function TestsTab() {
 
   return (
     <section>
-      <h2>Р”РѕСЃС‚СѓРїРЅС‹Рµ РЅР°Р±РѕСЂС‹</h2>
+      <h2>Доступные наборы</h2>
       {error && <p className="errorText">{error}</p>}
       <div className="cardList">
         {tests.map((test) => (
@@ -106,13 +106,13 @@ function TestsTab() {
               <h3>{test.title}</h3>
               <span className="kindBadge">{typeLabel(test.kind)}</span>
             </div>
-            <p className="mutedText">{test.description || "Р‘РµР· РѕРїРёСЃР°РЅРёСЏ"}</p>
+            <p className="mutedText">{test.description || "Без описания"}</p>
             <div className="metaList">
-              <p>Р­Р»РµРјРµРЅС‚РѕРІ: {test.questionCount}</p>
-              <p>Р›СѓС‡С€Р°СЏ РѕС†РµРЅРєР°: {test.bestAttempt ? `${test.bestAttempt.grade}/10` : "РїРѕРєР° РЅРµС‚"}</p>
+              <p>Элементов: {test.questionCount}</p>
+              <p>Лучшая оценка: {test.bestAttempt ? `${test.bestAttempt.grade}/10` : "пока нет"}</p>
             </div>
             <button className="primaryBtn" onClick={() => navigate(`/test/${test.id}`)}>
-              РќР°С‡Р°С‚СЊ
+              Начать
             </button>
           </article>
         ))}
@@ -131,7 +131,7 @@ function FindTestTab() {
     e.preventDefault();
     setError("");
     if (!/^\d{5}$/.test(code)) {
-      setError("Р’РІРµРґРёС‚Рµ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ");
+      setError("Введите 5-значный код");
       return;
     }
 
@@ -151,10 +151,10 @@ function FindTestTab() {
 
   return (
     <section>
-      <h2>РќР°Р№С‚Рё РїРѕ РєРѕРґСѓ</h2>
+      <h2>Найти по коду</h2>
       <form className="card" onSubmit={onSubmit}>
         <label className="labelText">
-          РљРѕРґ
+          Код
           <input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
@@ -164,7 +164,7 @@ function FindTestTab() {
         </label>
         {error && <p className="errorText">{error}</p>}
         <button className="primaryBtn" type="submit" disabled={loading}>
-          {loading ? "РџСЂРѕРІРµСЂСЏРµРј..." : "РћС‚РєСЂС‹С‚СЊ"}
+          {loading ? "Проверяем..." : "Открыть"}
         </button>
       </form>
     </section>
@@ -176,6 +176,8 @@ function ProfileTab({ user }) {
   const [adminTests, setAdminTests] = useState([]);
   const [error, setError] = useState("");
   const [links, setLinks] = useState({});
+  const [selectedStats, setSelectedStats] = useState(null);
+  const [selectedUserStats, setSelectedUserStats] = useState(null);
 
   useEffect(() => {
     api("/tests/me/results")
@@ -201,22 +203,33 @@ function ProfileTab({ user }) {
       body: JSON.stringify({ testId: test.id })
     });
     const url = `${window.location.origin}/access/${data.token}`;
-    setLinks((prev) => ({ ...prev, [test.id]: `${url} (РєРѕРґ ${data.shortCode})` }));
+    setLinks((prev) => ({ ...prev, [test.id]: `${url} (код ${data.shortCode})` }));
+  }
+
+  async function loadStats(test) {
+    const stats = await api(`/admin/tests/${test.id}/stats`);
+    setSelectedStats(stats);
+    setSelectedUserStats(null);
+  }
+
+  async function loadUserStats(testId, userId) {
+    const details = await api(`/admin/tests/${testId}/stats/users/${userId}`);
+    setSelectedUserStats(details);
   }
 
   return (
     <section>
-      <h2>РњРѕР№ РїСЂРѕС„РёР»СЊ</h2>
+      <h2>Мой профиль</h2>
       {error && <p className="errorText">{error}</p>}
       <div className="card">
         <h3>{displayName(user)}</h3>
       </div>
 
-      <h3 className="blockTitle">РџСЂРѕР№РґРµРЅРѕ</h3>
+      <h3 className="blockTitle">Пройдено</h3>
       {!data ? (
-        <p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p>
+        <p className="mutedText">Загрузка...</p>
       ) : data.profileTests.length === 0 ? (
-        <p className="mutedText">РџРѕРєР° РЅРµС‚ РїСЂРѕС…РѕР¶РґРµРЅРёР№</p>
+        <p className="mutedText">Пока нет прохождений</p>
       ) : (
         <div className="cardList">
           {data.profileTests.map((item) => (
@@ -225,7 +238,7 @@ function ProfileTab({ user }) {
                 <h3>{item.testTitle}</h3>
                 <span className="kindBadge">{typeLabel(item.kind)}</span>
               </div>
-              <p>{item.isPublic ? "Р›СѓС‡С€Р°СЏ РѕС†РµРЅРєР°" : "РћС†РµРЅРєР°"}: {item.grade}/10</p>
+              <p>{item.isPublic ? "Лучшая оценка" : "Оценка"}: {item.grade}/10</p>
             </article>
           ))}
         </div>
@@ -233,7 +246,7 @@ function ProfileTab({ user }) {
 
       {user.role === "ADMIN" && (
         <>
-          <h3 className="blockTitle">РњРѕРё РЅР°Р±РѕСЂС‹</h3>
+          <h3 className="blockTitle">Мои наборы</h3>
           <div className="cardList">
             {adminTests.map((test) => (
               <article className="card" key={test.id}>
@@ -243,13 +256,61 @@ function ProfileTab({ user }) {
                 </div>
                 <div className="buttonRow">
                   <button className="secondaryBtn" onClick={() => makeLink(test)}>
-                    РЎСЃС‹Р»РєР°
+                    Ссылка
+                  </button>
+                  <button className="secondaryBtn" onClick={() => loadStats(test)}>
+                    Статистика
                   </button>
                 </div>
                 {links[test.id] && <p className="mutedText">{links[test.id]}</p>}
               </article>
             ))}
           </div>
+
+          {selectedStats && (
+            <div className="cardList">
+              <article className="card">
+                <h3>Статистика: {selectedStats.test.title}</h3>
+                <p>Тип: {typeLabel(selectedStats.test.kind)}</p>
+                <p>Прохождений: {selectedStats.attemptsCount}</p>
+                <p>Уникальных пользователей: {selectedStats.uniqueUsers}</p>
+                <p>Средняя лучшая оценка: {selectedStats.avgGrade.toFixed(2)}</p>
+              </article>
+
+              {selectedStats.users.map((row) => (
+                <article className="card" key={row.user.id}>
+                  <h3>{row.user.firstName || row.user.username || row.user.telegramId}</h3>
+                  <p>Попыток: {row.attemptsCount}</p>
+                  <p>Лучшая оценка: {row.bestAttempt.grade}/10 ({row.bestAttempt.percent.toFixed(1)}%)</p>
+                  <button className="secondaryBtn" onClick={() => loadUserStats(selectedStats.test.id, row.user.id)}>
+                    Ответы пользователя
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {selectedUserStats && (
+            <div className="cardList">
+              <article className="card">
+                <h3>Ответы: {selectedUserStats.user.firstName || selectedUserStats.user.username || selectedUserStats.user.telegramId}</h3>
+                <p>Набор: {selectedUserStats.test.title}</p>
+              </article>
+              {selectedUserStats.attempts.map((attempt) => (
+                <article className="card" key={attempt.attemptId}>
+                  <h3>Попытка: {attempt.grade}/10 ({attempt.percent.toFixed(1)}%)</h3>
+                  {attempt.answers.map((a) => (
+                    <div key={a.questionId} className="answerAuditRow">
+                      <p><b>{a.questionText}</b></p>
+                      <p>Ответ: {a.selected || "нет ответа"}</p>
+                      <p>Верно: {a.correct || "-"}</p>
+                      <p className={a.isCorrect ? "okText" : "errorText"}>{a.isCorrect ? "Правильно" : "Неправильно"}</p>
+                    </div>
+                  ))}
+                </article>
+              ))}
+            </div>
+          )}
         </>
       )}
     </section>
@@ -352,14 +413,14 @@ function TestForm({ onSubmit, submitText }) {
     const payload = normalizeDraft(draft);
 
     if (!payload.title) {
-      setError("Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ");
+      setError("Введите название");
       return;
     }
 
     if (payload.kind === "CARDS") {
       const invalid = !payload.cardLeftLabel || !payload.cardRightLabel || payload.questions.some((q) => !q.text);
       if (invalid) {
-        setError("Р”Р»СЏ РєР°СЂС‚РѕС‡РµРє Р·Р°РїРѕР»РЅРёС‚Рµ РїРѕРґРїРёСЃРё Р»РµРІРѕ/РїСЂР°РІРѕ Рё СЃР»РѕРІР°");
+        setError("Для карточек заполните подписи лево/право и слова");
         return;
       }
     } else {
@@ -367,7 +428,7 @@ function TestForm({ onSubmit, submitText }) {
         (q) => !q.text || q.options.length < 2 || !q.options.some((o) => o.isCorrect)
       );
       if (invalid) {
-        setError("Р”Р»СЏ С‚РµСЃС‚Р° Р·Р°РїРѕР»РЅРёС‚Рµ РІРѕРїСЂРѕСЃС‹ Рё РІР°СЂРёР°РЅС‚С‹");
+        setError("Для теста заполните вопросы и варианты");
         return;
       }
     }
@@ -392,23 +453,23 @@ function TestForm({ onSubmit, submitText }) {
             type="button"
             onClick={() => setDraft((p) => ({ ...p, kind: "QUIZ", questions: [{ text: "", explanation: "", options: [{ text: "", isCorrect: true }, { text: "", isCorrect: false }] }] }))}
           >
-            Р”РѕР±Р°РІРёС‚СЊ С‚РµСЃС‚
+            Добавить тест
           </button>
           <button
             className={draft.kind === "CARDS" ? "primaryBtn" : "secondaryBtn"}
             type="button"
             onClick={() => setDraft((p) => ({ ...p, kind: "CARDS", questions: [{ text: "", explanation: "", correctSide: "LEFT" }] }))}
           >
-            Р”РѕР±Р°РІРёС‚СЊ РєР°СЂС‚РѕС‡РєРё
+            Добавить карточки
           </button>
         </div>
 
         <label className="labelText">
-          РќР°Р·РІР°РЅРёРµ
+          Название
           <input value={draft.title} onChange={(e) => setDraft((p) => ({ ...p, title: e.target.value }))} />
         </label>
         <label className="labelText">
-          РћРїРёСЃР°РЅРёРµ
+          Описание
           <textarea value={draft.description} onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))} rows={2} />
         </label>
 
@@ -418,18 +479,18 @@ function TestForm({ onSubmit, submitText }) {
             checked={draft.isPublic}
             onChange={(e) => setDraft((p) => ({ ...p, isPublic: e.target.checked, allowMultipleAttempts: e.target.checked ? true : p.allowMultipleAttempts }))}
           />
-          РџСѓР±Р»РёС‡РЅС‹Р№
+          Публичный
         </label>
       </article>
 
       {draft.kind === "CARDS" && (
         <article className="card">
           <label className="labelText">
-            Р›РµРІС‹Р№ РІР°СЂРёР°РЅС‚
+            Левый вариант
             <input value={draft.cardLeftLabel} onChange={(e) => setDraft((p) => ({ ...p, cardLeftLabel: e.target.value }))} />
           </label>
           <label className="labelText">
-            РџСЂР°РІС‹Р№ РІР°СЂРёР°РЅС‚
+            Правый вариант
             <input value={draft.cardRightLabel} onChange={(e) => setDraft((p) => ({ ...p, cardRightLabel: e.target.value }))} />
           </label>
         </article>
@@ -438,12 +499,12 @@ function TestForm({ onSubmit, submitText }) {
       {draft.questions.map((q, qIdx) => (
         <article className="card" key={`q-${qIdx}`}>
           <label className="labelText">
-            {draft.kind === "CARDS" ? `РљР°СЂС‚РѕС‡РєР° ${qIdx + 1}` : `Р’РѕРїСЂРѕСЃ ${qIdx + 1}`}
+            {draft.kind === "CARDS" ? `Карточка ${qIdx + 1}` : `Вопрос ${qIdx + 1}`}
             <input value={q.text} onChange={(e) => setQuestion(qIdx, (item) => { item.text = e.target.value; })} />
           </label>
 
           <label className="labelText">
-            РћР±СЉСЏСЃРЅРµРЅРёРµ
+            Объяснение
             <textarea value={q.explanation || ""} onChange={(e) => setQuestion(qIdx, (item) => { item.explanation = e.target.value; })} rows={2} />
           </label>
 
@@ -454,14 +515,14 @@ function TestForm({ onSubmit, submitText }) {
                 className={q.correctSide === "LEFT" ? "primaryBtn" : "secondaryBtn"}
                 onClick={() => setQuestion(qIdx, (item) => { item.correctSide = "LEFT"; })}
               >
-                Р’РµСЂРЅРѕ СЃР»РµРІР°
+                Верно слева
               </button>
               <button
                 type="button"
                 className={q.correctSide === "RIGHT" ? "primaryBtn" : "secondaryBtn"}
                 onClick={() => setQuestion(qIdx, (item) => { item.correctSide = "RIGHT"; })}
               >
-                Р’РµСЂРЅРѕ СЃРїСЂР°РІР°
+                Верно справа
               </button>
             </div>
           ) : (
@@ -471,7 +532,7 @@ function TestForm({ onSubmit, submitText }) {
                   <input
                     value={opt.text}
                     onChange={(e) => setQuestion(qIdx, (item) => { item.options[oIdx].text = e.target.value; })}
-                    placeholder={`Р’Р°СЂРёР°РЅС‚ ${oIdx + 1}`}
+                    placeholder={`Вариант ${oIdx + 1}`}
                   />
                   <label className="checkRow">
                     <input
@@ -484,7 +545,7 @@ function TestForm({ onSubmit, submitText }) {
                         })
                       }
                     />
-                    Р’РµСЂРЅС‹Р№
+                    Верный
                   </label>
                 </div>
               ))}
@@ -493,7 +554,7 @@ function TestForm({ onSubmit, submitText }) {
                 type="button"
                 onClick={() => setQuestion(qIdx, (item) => { if (item.options.length < 5) item.options.push({ text: "", isCorrect: false }); })}
               >
-                + Р’Р°СЂРёР°РЅС‚
+                + Вариант
               </button>
             </>
           )}
@@ -501,12 +562,12 @@ function TestForm({ onSubmit, submitText }) {
       ))}
 
       <button className="secondaryBtn" type="button" onClick={addQuestion}>
-        + {draft.kind === "CARDS" ? "РљР°СЂС‚РѕС‡РєР°" : "Р’РѕРїСЂРѕСЃ"}
+        + {draft.kind === "CARDS" ? "Карточка" : "Вопрос"}
       </button>
 
       {error && <p className="errorText">{error}</p>}
       <button className="primaryBtn" type="submit" disabled={saving}>
-        {saving ? "РЎРѕС…СЂР°РЅСЏРµРј..." : submitText}
+        {saving ? "Сохраняем..." : submitText}
       </button>
     </form>
   );
@@ -522,7 +583,7 @@ function AddTestTab() {
       body: JSON.stringify(payload)
     });
 
-    let text = "РќР°Р±РѕСЂ СЃРѕР·РґР°РЅ";
+    let text = "Набор создан";
     let generatedLink = `${window.location.origin}/test/${created.id}`;
 
     if (!payload.isPublic) {
@@ -531,7 +592,7 @@ function AddTestTab() {
         body: JSON.stringify({ testId: created.id })
       });
       generatedLink = `${window.location.origin}/access/${access.token}`;
-      text = `РџСЂРёРІР°С‚РЅС‹Р№ РЅР°Р±РѕСЂ СЃРѕР·РґР°РЅ, РєРѕРґ ${access.shortCode}`;
+      text = `Приватный набор создан, код ${access.shortCode}`;
     }
 
     setMessage(text);
@@ -540,10 +601,10 @@ function AddTestTab() {
 
   return (
     <section>
-      <h2>Р”РѕР±Р°РІРёС‚СЊ</h2>
+      <h2>Добавить</h2>
       {message && <p className="okText">{message}</p>}
-      {link && <p className="mutedText">РЎСЃС‹Р»РєР°: {link}</p>}
-      <TestForm onSubmit={create} submitText="РЎРѕС…СЂР°РЅРёС‚СЊ" />
+      {link && <p className="mutedText">Ссылка: {link}</p>}
+      <TestForm onSubmit={create} submitText="Сохранить" />
     </section>
   );
 }
@@ -607,7 +668,7 @@ function SolveFlow({ test, accessToken }) {
 
   async function checkAnswer() {
     if (!selected) {
-      setError("Р’С‹Р±РµСЂРёС‚Рµ РѕС‚РІРµС‚");
+      setError("Выберите ответ");
       return;
     }
     setError("");
@@ -640,16 +701,16 @@ function SolveFlow({ test, accessToken }) {
   if (result) {
     return (
       <article className="card">
-        <h2>Р РµР·СѓР»СЊС‚Р°С‚: {result.grade}/10</h2>
-        <p>Р РµС€РµРЅРѕ: {result.correctCount} РёР· {result.totalQuestions}</p>
-        <button className="primaryBtn" onClick={() => navigate("/")}>Рљ СЃРїРёСЃРєСѓ</button>
+        <h2>Результат: {result.grade}/10</h2>
+        <p>Решено: {result.correctCount} из {result.totalQuestions}</p>
+        <button className="primaryBtn" onClick={() => navigate("/")}>К списку</button>
       </article>
     );
   }
 
   return (
     <>
-      <article className="card"><p>Р РµС€РµРЅРѕ: {solved} РёР· {questions.length}</p></article>
+      <article className="card"><p>Решено: {solved} из {questions.length}</p></article>
 
       {test.kind === "CARDS" ? (
         <CardsCard
@@ -679,7 +740,7 @@ function SolveFlow({ test, accessToken }) {
       {feedback?.explanation && <p className="explainText">{feedback.explanation}</p>}
       {error && <p className="errorText">{error}</p>}
 
-      {!checked && <button className="primaryBtn" onClick={checkAnswer}>РџСЂРѕРІРµСЂРёС‚СЊ</button>}
+      {!checked && <button className="primaryBtn" onClick={checkAnswer}>Проверить</button>}
       {checked && !isLast && (
         <button
           className="primaryBtn"
@@ -689,10 +750,10 @@ function SolveFlow({ test, accessToken }) {
             setError("");
           }}
         >
-          РЎР»РµРґСѓСЋС‰РёР№ РІРѕРїСЂРѕСЃ
+          Следующий вопрос
         </button>
       )}
-      {checked && isLast && <button className="primaryBtn" onClick={finish}>РџРѕСЃРјРѕС‚СЂРµС‚СЊ СЂРµР·СѓР»СЊС‚Р°С‚С‹</button>}
+      {checked && isLast && <button className="primaryBtn" onClick={finish}>Посмотреть результаты</button>}
     </>
   );
 }
@@ -710,7 +771,7 @@ function SolveTestPage() {
   }, [id]);
 
   if (error) return <div className="appShell"><p className="errorText">{error}</p></div>;
-  if (!test) return <div className="appShell"><p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p></div>;
+  if (!test) return <div className="appShell"><p className="mutedText">Загрузка...</p></div>;
 
   return (
     <div className="appShell">
@@ -719,7 +780,7 @@ function SolveTestPage() {
           <p className="topLabel">{typeLabel(test.kind)}</p>
           <h1>{test.title}</h1>
         </div>
-        <button className="ghostBtn" onClick={() => navigate("/")}>РќР°Р·Р°Рґ</button>
+        <button className="ghostBtn" onClick={() => navigate("/")}>Назад</button>
       </header>
       <main className="contentArea">
         <SolveFlow test={test} />
@@ -741,16 +802,16 @@ function PrivateTestPage() {
   }, [token]);
 
   if (error) return <div className="appShell"><p className="errorText">{error}</p></div>;
-  if (!test) return <div className="appShell"><p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p></div>;
+  if (!test) return <div className="appShell"><p className="mutedText">Загрузка...</p></div>;
 
   return (
     <div className="appShell">
       <header className="topBar">
         <div>
-          <p className="topLabel">{typeLabel(test.kind)} РїРѕ СЃСЃС‹Р»РєРµ</p>
+          <p className="topLabel">{typeLabel(test.kind)} по ссылке</p>
           <h1>{test.title}</h1>
         </div>
-        <button className="ghostBtn" onClick={() => navigate("/")}>РќР°Р·Р°Рґ</button>
+        <button className="ghostBtn" onClick={() => navigate("/")}>Назад</button>
       </header>
       <main className="contentArea">
         <SolveFlow test={test} accessToken={token} />
@@ -767,8 +828,8 @@ function AdminEditTestPage({ user }) {
 export default function App() {
   const { user, loading, error } = useSession();
 
-  if (loading) return <div className="appShell"><p className="mutedText">РџСЂРѕРІРµСЂРєР° Р°РІС‚РѕСЂРёР·Р°С†РёРё...</p></div>;
-  if (!user) return <div className="appShell"><p className="errorText">{error || "РќРµ СѓРґР°Р»РѕСЃСЊ Р°РІС‚РѕСЂРёР·РѕРІР°С‚СЊСЃСЏ"}</p></div>;
+  if (loading) return <div className="appShell"><p className="mutedText">Проверка авторизации...</p></div>;
+  if (!user) return <div className="appShell"><p className="errorText">{error || "Не удалось авторизоваться"}</p></div>;
 
   return (
     <Routes>

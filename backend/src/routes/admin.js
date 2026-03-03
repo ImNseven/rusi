@@ -241,33 +241,113 @@ router.get("/tests/:id/stats", async (req, res) => {
 
   const grouped = new Map();
   for (const at of test.attempts) {
-    const prev = grouped.get(at.userId);
-    if (!prev || at.grade > prev.grade || (at.grade === prev.grade && at.percent > prev.percent)) {
-      grouped.set(at.userId, at);
+    const current = grouped.get(at.userId) || { attempts: [], best: null };
+    current.attempts.push(at);
+    if (!current.best || at.grade > current.best.grade || (at.grade === current.best.grade && at.percent > current.best.percent)) {
+      current.best = at;
     }
+    grouped.set(at.userId, current);
   }
 
-  const bestAttempts = [...grouped.values()];
+  const users = [...grouped.values()].map((entry) => ({
+    user: {
+      id: entry.best.user.id,
+      telegramId: entry.best.user.telegramId.toString(),
+      username: entry.best.user.username,
+      firstName: entry.best.user.firstName,
+      lastName: entry.best.user.lastName
+    },
+    attemptsCount: entry.attempts.length,
+    bestAttempt: {
+      id: entry.best.id,
+      grade: entry.best.grade,
+      percent: entry.best.percent,
+      createdAt: entry.best.createdAt
+    }
+  }));
   const avgGrade =
-    bestAttempts.length === 0 ? 0 : bestAttempts.reduce((acc, item) => acc + item.grade, 0) / bestAttempts.length;
+    users.length === 0 ? 0 : users.reduce((acc, item) => acc + item.bestAttempt.grade, 0) / users.length;
 
   return res.json({
-    test: { id: test.id, title: test.title, isPublic: test.isPublic },
+    test: { id: test.id, title: test.title, isPublic: test.isPublic, kind: test.kind },
     attemptsCount: test.attempts.length,
-    uniqueUsers: bestAttempts.length,
+    uniqueUsers: users.length,
     avgGrade,
-    bestAttemptsByUser: bestAttempts.map((at) => ({
+    users
+  });
+});
+
+router.get("/tests/:id/stats/users/:userId", async (req, res) => {
+  const test = await prisma.test.findUnique({
+    where: { id: req.params.id },
+    include: {
+      questions: {
+        include: { options: true },
+        orderBy: { sortOrder: "asc" }
+      }
+    }
+  });
+  if (!test) return res.status(404).json({ error: "Test not found" });
+  if (test.createdById !== req.user.sub) return res.status(403).json({ error: "Forbidden" });
+
+  const attempts = await prisma.attempt.findMany({
+    where: { testId: req.params.id, userId: req.params.userId },
+    include: {
+      answers: true,
       user: {
-        id: at.user.id,
-        telegramId: at.user.telegramId.toString(),
-        username: at.user.username,
-        firstName: at.user.firstName,
-        lastName: at.user.lastName
-      },
-      grade: at.grade,
-      percent: at.percent,
-      createdAt: at.createdAt
-    }))
+        select: { id: true, telegramId: true, username: true, firstName: true, lastName: true }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  if (attempts.length === 0) return res.status(404).json({ error: "No attempts for this user" });
+
+  const questionMap = new Map(test.questions.map((q) => [q.id, q]));
+  const data = attempts.map((attempt) => ({
+    attemptId: attempt.id,
+    grade: attempt.grade,
+    percent: attempt.percent,
+    createdAt: attempt.createdAt,
+    answers: test.questions.map((q) => {
+      const a = attempt.answers.find((x) => x.questionId === q.id);
+      const selectedOption = q.options.find((o) => o.id === a?.optionId);
+      const correctOption = q.options.find((o) => o.isCorrect);
+      const selectedText =
+        test.kind === "CARDS"
+          ? a?.optionId === "LEFT"
+            ? test.cardLeftLabel
+            : a?.optionId === "RIGHT"
+              ? test.cardRightLabel
+              : null
+          : selectedOption?.text || null;
+      const correctText =
+        test.kind === "CARDS"
+          ? q.cardCorrectSide === "LEFT"
+            ? test.cardLeftLabel
+            : test.cardRightLabel
+          : correctOption?.text || null;
+
+      return {
+        questionId: q.id,
+        questionText: questionMap.get(q.id)?.text || q.text,
+        explanation: q.explanation,
+        selected: selectedText,
+        correct: correctText,
+        isCorrect: Boolean(a?.isCorrect)
+      };
+    })
+  }));
+
+  return res.json({
+    test: { id: test.id, title: test.title, kind: test.kind, isPublic: test.isPublic },
+    user: {
+      id: attempts[0].user.id,
+      telegramId: attempts[0].user.telegramId.toString(),
+      username: attempts[0].user.username,
+      firstName: attempts[0].user.firstName,
+      lastName: attempts[0].user.lastName
+    },
+    attempts: data
   });
 });
 
