@@ -1,4 +1,4 @@
-﻿DO $$
+DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TestKind') THEN
     CREATE TYPE "TestKind" AS ENUM ('QUIZ', 'CARDS');
