@@ -21,6 +21,7 @@ model User {
   role        UserRole  @default(STUDENT)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  createdTests Test[]
   attempts    Attempt[]
   tokensUsed  AccessUse[]
 }
