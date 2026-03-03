@@ -98,6 +98,7 @@ model TestAccessLink {
   testId     String
   test       Test        @relation(fields: [testId], references: [id], onDelete: Cascade)
   token      String      @unique
+  shortCode  String?     @unique
   maxUses    Int?
   expiresAt  DateTime?
   uses       AccessUse[]

@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+﻿import { useEffect, useMemo, useState } from "react";
+import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api, getTelegramInitData } from "./api";
+
+function displayName(user) {
+  return user.firstName || user.username || `id${user.telegramId}`;
+}
 
 function useSession() {
   const [user, setUser] = useState(null);
@@ -21,7 +25,7 @@ function useSession() {
     }
 
     if (!initData) {
-      setError("Открой WebApp из Telegram бота, чтобы авторизоваться.");
+      setError("РћС‚РєСЂРѕР№ WebApp РёР· Telegram Р±РѕС‚Р°, С‡С‚РѕР±С‹ Р°РІС‚РѕСЂРёР·РѕРІР°С‚СЊСЃСЏ.");
       setLoading(false);
       return;
     }
@@ -39,35 +43,60 @@ function useSession() {
       .finally(() => setLoading(false));
   }, []);
 
-  return { user, loading, error, setUser, setError };
+  return { user, loading, error, setUser };
 }
 
-function Layout({ user, onLogout }) {
+function Shell({ user, onLogout }) {
+  const [activeTab, setActiveTab] = useState("tests");
+
+  const tabs = [
+    { key: "tests", label: "РўРµСЃС‚С‹" },
+    { key: "find", label: "РќР°Р№С‚Рё С‚РµСЃС‚" },
+    { key: "profile", label: "РњРѕР№ РїСЂРѕС„РёР»СЊ" }
+  ];
+
+  if (user.role === "ADMIN") {
+    tabs.push({ key: "add", label: "Р”РѕР±Р°РІРёС‚СЊ С‚РµСЃС‚" });
+  }
+
   return (
-    <div className="container">
-      <header className="header">
-        <h1>Spelling Tests</h1>
+    <div className="appShell">
+      <header className="topBar">
         <div>
-          <Link to="/">Тесты</Link>
-          <Link to="/results">Мои результаты</Link>
-          {user.role === "ADMIN" && <Link to="/admin">Админ</Link>}
-          <button onClick={onLogout}>Выйти</button>
+          <p className="topLabel">Spelling Tests</p>
+          <h1>{displayName(user)}</h1>
         </div>
+        <button className="ghostBtn" onClick={onLogout}>
+          Р’С‹Р№С‚Рё
+        </button>
       </header>
-      <Routes>
-        <Route path="/" element={<TestsPage user={user} />} />
-        <Route path="/test/:id" element={<SolveTestPage user={user} />} />
-        <Route path="/access/:token" element={<PrivateTestPage />} />
-        <Route path="/results" element={<ResultsPage />} />
-        <Route path="/admin" element={user.role === "ADMIN" ? <AdminPage /> : <Navigate to="/" />} />
-      </Routes>
+
+      <main className="contentArea">
+        {activeTab === "tests" && <TestsTab />}
+        {activeTab === "find" && <FindTestTab />}
+        {activeTab === "profile" && <ProfileTab user={user} />}
+        {activeTab === "add" && user.role === "ADMIN" && <AddTestTab />}
+      </main>
+
+      <nav className="bottomTabs">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            className={activeTab === tab.key ? "tabBtn active" : "tabBtn"}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
 
-function TestsPage() {
+function TestsTab() {
   const [tests, setTests] = useState([]);
   const [error, setError] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     api("/tests")
@@ -77,22 +106,462 @@ function TestsPage() {
 
   return (
     <section>
-      <h2>Доступные тесты</h2>
-      {error && <p className="error">{error}</p>}
-      <div className="list">
+      <h2>РџСѓР±Р»РёС‡РЅС‹Рµ С‚РµСЃС‚С‹</h2>
+      {error && <p className="errorText">{error}</p>}
+      <div className="cardList">
         {tests.map((test) => (
-          <div className="card" key={test.id}>
+          <article className="card" key={test.id}>
             <h3>{test.title}</h3>
-            <p>{test.description || "Без описания"}</p>
-            <p>Вопросов: {test.questionCount}</p>
-            <p>
-              Лучшая оценка: {test.bestAttempt ? `${test.bestAttempt.grade}/10` : "еще нет попыток"}
-            </p>
-            <Link to={`/test/${test.id}`}>Решать</Link>
-          </div>
+            <p className="mutedText">{test.description || "Р‘РµР· РѕРїРёСЃР°РЅРёСЏ"}</p>
+            <div className="metaList">
+              <p>Р’РѕРїСЂРѕСЃРѕРІ: {test.questionCount}</p>
+              <p>Р›СѓС‡С€Р°СЏ РѕС†РµРЅРєР°: {test.bestAttempt ? `${test.bestAttempt.grade}/10` : "РїРѕРєР° РЅРµС‚"}</p>
+            </div>
+            <button className="primaryBtn" onClick={() => navigate(`/test/${test.id}`)}>
+              Р РµС€Р°С‚СЊ
+            </button>
+          </article>
         ))}
       </div>
     </section>
+  );
+}
+
+function FindTestTab() {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setError("");
+
+    if (!/^\d{5}$/.test(code)) {
+      setError("Р’РІРµРґРёС‚Рµ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await api("/tests/access-code", {
+        method: "POST",
+        body: JSON.stringify({ code })
+      });
+      navigate(`/access/${data.token}`);
+    } catch (e2) {
+      setError(e2.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section>
+      <h2>РќР°Р№С‚Рё С‚РµСЃС‚</h2>
+      <p className="mutedText">Р’РІРµРґРёС‚Рµ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ, РєРѕС‚РѕСЂС‹Р№ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р»Р° СЃРёСЃС‚РµРјР°.</p>
+      <form className="card" onSubmit={onSubmit}>
+        <label className="labelText">
+          РљРѕРґ С‚РµСЃС‚Р°
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
+            placeholder="12345"
+            inputMode="numeric"
+          />
+        </label>
+        {error && <p className="errorText">{error}</p>}
+        <button className="primaryBtn" type="submit" disabled={loading}>
+          {loading ? "РџСЂРѕРІРµСЂСЏРµРј..." : "РћС‚РєСЂС‹С‚СЊ С‚РµСЃС‚"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function ProfileTab({ user }) {
+  const [data, setData] = useState(null);
+  const [adminTests, setAdminTests] = useState([]);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    api("/tests/me/results")
+      .then(setData)
+      .catch((e) => setError(e.message));
+
+    if (user.role === "ADMIN") {
+      api("/admin/tests")
+        .then(setAdminTests)
+        .catch((e) => setError(e.message));
+    }
+  }, [user.role]);
+
+  return (
+    <section>
+      <h2>РњРѕР№ РїСЂРѕС„РёР»СЊ</h2>
+      {error && <p className="errorText">{error}</p>}
+      <div className="card">
+        <h3>{displayName(user)}</h3>
+        <p className="mutedText">Р РѕР»СЊ: {user.role === "ADMIN" ? "РђРґРјРёРЅ" : "РЈС‡РµРЅРёРє"}</p>
+      </div>
+
+      <h3 className="blockTitle">РџСЂРѕР№РґРµРЅРЅС‹Рµ С‚РµСЃС‚С‹</h3>
+      {!data ? (
+        <p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p>
+      ) : data.profileTests.length === 0 ? (
+        <p className="mutedText">Р’С‹ РµС‰Рµ РЅРµ РїСЂРѕС…РѕРґРёР»Рё С‚РµСЃС‚С‹</p>
+      ) : (
+        <div className="cardList">
+          {data.profileTests.map((item) => (
+            <article className="card" key={item.testId}>
+              <h3>{item.testTitle}</h3>
+              <p>{item.isPublic ? "РџСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚" : "РќРµРїСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚"}</p>
+              <p>{item.isPublic ? "Р›СѓС‡С€Р°СЏ РѕС†РµРЅРєР°" : "РћС†РµРЅРєР°"}: {item.grade}/10</p>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {user.role === "ADMIN" && (
+        <>
+          <h3 className="blockTitle">РњРѕРё СЃРѕР·РґР°РЅРЅС‹Рµ С‚РµСЃС‚С‹</h3>
+          <div className="cardList">
+            {adminTests.map((test) => (
+              <article className="card" key={test.id}>
+                <h3>{test.title}</h3>
+                <p>{test.isPublic ? "РџСѓР±Р»РёС‡РЅС‹Р№" : "РќРµРїСѓР±Р»РёС‡РЅС‹Р№"}</p>
+                <button className="secondaryBtn" onClick={() => navigate(`/admin/tests/${test.id}/edit`)}>
+                  Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ
+                </button>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function makeDraft() {
+  return {
+    title: "",
+    description: "",
+    isPublic: true,
+    allowMultipleAttempts: true,
+    questions: [
+      {
+        text: "",
+        options: [
+          { text: "", isCorrect: true },
+          { text: "", isCorrect: false }
+        ]
+      }
+    ],
+    gradeRules: [
+      { minPercent: 0, grade: 2 },
+      { minPercent: 50, grade: 5 },
+      { minPercent: 70, grade: 7 },
+      { minPercent: 90, grade: 9 },
+      { minPercent: 100, grade: 10 }
+    ]
+  };
+}
+
+function normalizeDraft(draft) {
+  return {
+    title: draft.title.trim(),
+    description: draft.description.trim() || undefined,
+    isPublic: draft.isPublic,
+    allowMultipleAttempts: draft.isPublic ? true : draft.allowMultipleAttempts,
+    questions: draft.questions.map((q) => ({
+      text: q.text.trim(),
+      options: q.options
+        .map((o) => ({ text: o.text.trim(), isCorrect: o.isCorrect }))
+        .filter((o) => o.text.length > 0)
+    })),
+    gradeRules: draft.gradeRules
+  };
+}
+
+function cloneDraft(prev) {
+  return JSON.parse(JSON.stringify(prev));
+}
+
+function TestForm({ initialValue, submitText, onSubmit }) {
+  const [draft, setDraft] = useState(initialValue || makeDraft());
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (initialValue) {
+      setDraft(initialValue);
+    }
+  }, [initialValue]);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+
+    const payload = normalizeDraft(draft);
+    const invalid = payload.questions.some(
+      (q) => q.text.length === 0 || q.options.length < 2 || !q.options.some((o) => o.isCorrect)
+    );
+
+    if (!payload.title || invalid) {
+      setError("РџСЂРѕРІРµСЂСЊС‚Рµ РЅР°Р·РІР°РЅРёРµ С‚РµСЃС‚Р°, РІРѕРїСЂРѕСЃС‹ Рё РІР°СЂРёР°РЅС‚С‹ РѕС‚РІРµС‚РѕРІ");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onSubmit(payload);
+    } catch (e2) {
+      setError(e2.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function setQuestionText(qIdx, value) {
+    setDraft((prev) => {
+      const next = cloneDraft(prev);
+      next.questions[qIdx].text = value;
+      return next;
+    });
+  }
+
+  function setOptionText(qIdx, oIdx, value) {
+    setDraft((prev) => {
+      const next = cloneDraft(prev);
+      next.questions[qIdx].options[oIdx].text = value;
+      return next;
+    });
+  }
+
+  function setCorrect(qIdx, oIdx) {
+    setDraft((prev) => {
+      const next = cloneDraft(prev);
+      next.questions[qIdx].options = next.questions[qIdx].options.map((opt, idx) => ({
+        ...opt,
+        isCorrect: idx === oIdx
+      }));
+      return next;
+    });
+  }
+
+  function addQuestion() {
+    setDraft((prev) => ({
+      ...prev,
+      questions: [
+        ...prev.questions,
+        {
+          text: "",
+          options: [
+            { text: "", isCorrect: true },
+            { text: "", isCorrect: false }
+          ]
+        }
+      ]
+    }));
+  }
+
+  function addOption(qIdx) {
+    setDraft((prev) => {
+      const next = cloneDraft(prev);
+      if (next.questions[qIdx].options.length >= 5) return prev;
+      next.questions[qIdx].options.push({ text: "", isCorrect: false });
+      return next;
+    });
+  }
+
+  return (
+    <form className="cardList" onSubmit={submit}>
+      <article className="card">
+        <label className="labelText">
+          РќР°Р·РІР°РЅРёРµ С‚РµСЃС‚Р°
+          <input
+            value={draft.title}
+            onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
+            required
+          />
+        </label>
+        <label className="labelText">
+          РћРїРёСЃР°РЅРёРµ
+          <textarea
+            value={draft.description}
+            onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
+            rows={2}
+          />
+        </label>
+        <label className="checkRow">
+          <input
+            type="checkbox"
+            checked={draft.isPublic}
+            onChange={(e) =>
+              setDraft((prev) => ({
+                ...prev,
+                isPublic: e.target.checked,
+                allowMultipleAttempts: e.target.checked ? true : prev.allowMultipleAttempts
+              }))
+            }
+          />
+          РџСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚
+        </label>
+        {!draft.isPublic && (
+          <label className="checkRow">
+            <input
+              type="checkbox"
+              checked={draft.allowMultipleAttempts}
+              onChange={(e) => setDraft((prev) => ({ ...prev, allowMultipleAttempts: e.target.checked }))}
+            />
+            Р Р°Р·СЂРµС€РёС‚СЊ РЅРµСЃРєРѕР»СЊРєРѕ РїРѕРїС‹С‚РѕРє
+          </label>
+        )}
+      </article>
+
+      {draft.questions.map((q, qIdx) => (
+        <article className="card" key={`q-${qIdx}`}>
+          <label className="labelText">
+            Р’РѕРїСЂРѕСЃ {qIdx + 1}
+            <input value={q.text} onChange={(e) => setQuestionText(qIdx, e.target.value)} required />
+          </label>
+          {q.options.map((option, oIdx) => (
+            <div className="optionRow" key={`q-${qIdx}-o-${oIdx}`}>
+              <input
+                value={option.text}
+                onChange={(e) => setOptionText(qIdx, oIdx, e.target.value)}
+                placeholder={`Р’Р°СЂРёР°РЅС‚ ${oIdx + 1}`}
+              />
+              <label className="checkRow">
+                <input
+                  type="radio"
+                  name={`correct-${qIdx}`}
+                  checked={option.isCorrect}
+                  onChange={() => setCorrect(qIdx, oIdx)}
+                />
+                Р’РµСЂРЅС‹Р№
+              </label>
+            </div>
+          ))}
+          <button className="secondaryBtn" type="button" onClick={() => addOption(qIdx)}>
+            + Р’Р°СЂРёР°РЅС‚
+          </button>
+        </article>
+      ))}
+
+      <button className="secondaryBtn" type="button" onClick={addQuestion}>
+        + Р’РѕРїСЂРѕСЃ
+      </button>
+
+      {error && <p className="errorText">{error}</p>}
+      <button className="primaryBtn" type="submit" disabled={saving}>
+        {saving ? "РЎРѕС…СЂР°РЅСЏРµРј..." : submitText}
+      </button>
+    </form>
+  );
+}
+
+function AddTestTab() {
+  const [message, setMessage] = useState("");
+
+  async function createTest(payload) {
+    await api("/admin/tests", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    setMessage("РўРµСЃС‚ СЃРѕР·РґР°РЅ");
+  }
+
+  return (
+    <section>
+      <h2>Р”РѕР±Р°РІРёС‚СЊ С‚РµСЃС‚</h2>
+      {message && <p className="okText">{message}</p>}
+      <TestForm submitText="РЎРѕР·РґР°С‚СЊ С‚РµСЃС‚" onSubmit={createTest} />
+    </section>
+  );
+}
+
+function mapAdminTestToDraft(data) {
+  return {
+    title: data.title,
+    description: data.description || "",
+    isPublic: data.isPublic,
+    allowMultipleAttempts: data.allowMultipleAttempts,
+    questions: data.questions.map((q) => ({
+      text: q.text,
+      options: q.options.map((o) => ({ text: o.text, isCorrect: o.isCorrect }))
+    })),
+    gradeRules: data.gradeRules
+      .map((rule) => ({ minPercent: rule.minPercent, grade: rule.grade }))
+      .sort((a, b) => a.minPercent - b.minPercent)
+  };
+}
+
+function AdminEditTestPage({ user }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [initial, setInitial] = useState(null);
+  const [error, setError] = useState("");
+  const [code, setCode] = useState("");
+
+  useEffect(() => {
+    api(`/admin/tests/${id}`)
+      .then((data) => setInitial(mapAdminTestToDraft(data)))
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  async function saveTest(payload) {
+    await api(`/admin/tests/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function createCode() {
+    setError("");
+    try {
+      const data = await api("/tests/admin/create-link", {
+        method: "POST",
+        body: JSON.stringify({ testId: id })
+      });
+      setCode(data.shortCode || "");
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  if (user.role !== "ADMIN") return <Navigate to="/" />;
+
+  return (
+    <div className="appShell">
+      <header className="topBar">
+        <div>
+          <p className="topLabel">Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ С‚РµСЃС‚Р°</p>
+          <h1>РђРґРјРёРЅ</h1>
+        </div>
+        <button className="ghostBtn" onClick={() => navigate("/")}>
+          РќР°Р·Р°Рґ
+        </button>
+      </header>
+
+      <main className="contentArea">
+        {error && <p className="errorText">{error}</p>}
+        {!initial ? (
+          <p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p>
+        ) : (
+          <>
+            <div className="card">
+              <button className="secondaryBtn" onClick={createCode}>
+                РЎРіРµРЅРµСЂРёСЂРѕРІР°С‚СЊ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ
+              </button>
+              {code && <p className="codeBadge">РљРѕРґ: {code}</p>}
+            </div>
+            <TestForm initialValue={initial} submitText="РЎРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ" onSubmit={saveTest} />
+          </>
+        )}
+      </main>
+    </div>
   );
 }
 
@@ -108,30 +577,28 @@ function useTestState(loadFn) {
       .catch((e) => setError(e.message));
   }, [loadFn]);
 
-  const questions = test?.questions || [];
-
-  return { test, questions, answers, setAnswers, result, setResult, error };
+  return { test, answers, setAnswers, result, setResult, error };
 }
 
-function QuestionView({ q, selected, onSelect }) {
+function QuestionCard({ q, selected, onSelect }) {
   return (
-    <div className="card">
-      <p>
-        <b>{q.text}</b>
-      </p>
+    <article className="card">
+      <h3>{q.text}</h3>
       {q.imageUrl ? <img src={q.imageUrl} alt="hint" className="hintImage" /> : null}
-      {q.options.map((o) => (
-        <label key={o.id} className="option">
-          <input
-            type="radio"
-            checked={selected === o.id}
-            onChange={() => onSelect(q.id, o.id)}
-            name={q.id}
-          />
-          <span>{o.text}</span>
-        </label>
-      ))}
-    </div>
+      <div className="answersWrap">
+        {q.options.map((option) => (
+          <label className={selected === option.id ? "answerOption selected" : "answerOption"} key={option.id}>
+            <input
+              type="radio"
+              checked={selected === option.id}
+              onChange={() => onSelect(q.id, option.id)}
+              name={q.id}
+            />
+            {option.text}
+          </label>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -139,10 +606,13 @@ function SolveTestPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const loadFn = useMemo(() => () => api(`/tests/${id}`), [id]);
-  const { test, questions, answers, setAnswers, result, setResult, error } = useTestState(loadFn);
+  const { test, answers, setAnswers, result, setResult, error } = useTestState(loadFn);
 
   async function submit() {
-    const payload = questions.map((q) => ({ questionId: q.id, optionId: answers[q.id] })).filter((a) => a.optionId);
+    const payload = test.questions
+      .map((q) => ({ questionId: q.id, optionId: answers[q.id] }))
+      .filter((a) => Boolean(a.optionId));
+
     const res = await api(`/tests/${id}/submit`, {
       method: "POST",
       body: JSON.stringify({ answers: payload })
@@ -150,40 +620,53 @@ function SolveTestPage() {
     setResult(res);
   }
 
-  if (error) return <p className="error">{error}</p>;
-  if (!test) return <p>Загрузка...</p>;
-  if (result) {
-    return (
-      <div className="card">
-        <h2>Результат: {result.grade}/10</h2>
-        <p>
-          Правильно: {result.correctCount} из {result.totalQuestions}
-        </p>
-        <p>Процент: {result.percent.toFixed(1)}%</p>
-        <button onClick={() => navigate("/")}>К списку тестов</button>
-      </div>
-    );
-  }
+  if (error) return <div className="appShell"><p className="errorText">{error}</p></div>;
+  if (!test) return <div className="appShell"><p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p></div>;
 
   return (
-    <section>
-      <h2>{test.title}</h2>
-      <p>{test.description}</p>
-      {questions.map((q) => (
-        <QuestionView
-          key={q.id}
-          q={q}
-          selected={answers[q.id]}
-          onSelect={(questionId, optionId) =>
-            setAnswers((prev) => ({
-              ...prev,
-              [questionId]: optionId
-            }))
-          }
-        />
-      ))}
-      <button onClick={submit}>Отправить</button>
-    </section>
+    <div className="appShell">
+      <header className="topBar">
+        <div>
+          <p className="topLabel">РџСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚</p>
+          <h1>{test.title}</h1>
+        </div>
+        <button className="ghostBtn" onClick={() => navigate("/")}>
+          РќР°Р·Р°Рґ
+        </button>
+      </header>
+
+      <main className="contentArea">
+        {result ? (
+          <article className="card">
+            <h2>Р РµР·СѓР»СЊС‚Р°С‚: {result.grade}/10</h2>
+            <p>РџСЂР°РІРёР»СЊРЅРѕ: {result.correctCount} РёР· {result.totalQuestions}</p>
+            <p>РџСЂРѕС†РµРЅС‚: {result.percent.toFixed(1)}%</p>
+            <button className="primaryBtn" onClick={() => navigate("/")}>
+              Рљ С‚РµСЃС‚Р°Рј
+            </button>
+          </article>
+        ) : (
+          <>
+            {test.questions.map((q) => (
+              <QuestionCard
+                key={q.id}
+                q={q}
+                selected={answers[q.id]}
+                onSelect={(questionId, optionId) =>
+                  setAnswers((prev) => ({
+                    ...prev,
+                    [questionId]: optionId
+                  }))
+                }
+              />
+            ))}
+            <button className="primaryBtn" onClick={submit}>
+              РћС‚РїСЂР°РІРёС‚СЊ
+            </button>
+          </>
+        )}
+      </main>
+    </div>
   );
 }
 
@@ -191,10 +674,13 @@ function PrivateTestPage() {
   const { token } = useParams();
   const navigate = useNavigate();
   const loadFn = useMemo(() => () => api(`/tests/access/${token}`, { method: "POST" }), [token]);
-  const { test, questions, answers, setAnswers, result, setResult, error } = useTestState(loadFn);
+  const { test, answers, setAnswers, result, setResult, error } = useTestState(loadFn);
 
   async function submit() {
-    const payload = questions.map((q) => ({ questionId: q.id, optionId: answers[q.id] })).filter((a) => a.optionId);
+    const payload = test.questions
+      .map((q) => ({ questionId: q.id, optionId: answers[q.id] }))
+      .filter((a) => Boolean(a.optionId));
+
     const res = await api(`/tests/${test.id}/submit`, {
       method: "POST",
       body: JSON.stringify({ answers: payload, accessToken: token })
@@ -202,247 +688,94 @@ function PrivateTestPage() {
     setResult(res);
   }
 
-  if (error) return <p className="error">{error}</p>;
-  if (!test) return <p>Загрузка...</p>;
-  if (result) {
-    return (
-      <div className="card">
-        <h2>Результат: {result.grade}/10</h2>
-        <p>Процент: {result.percent.toFixed(1)}%</p>
-        <button onClick={() => navigate("/")}>К тестам</button>
-      </div>
-    );
-  }
+  if (error) return <div className="appShell"><p className="errorText">{error}</p></div>;
+  if (!test) return <div className="appShell"><p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p></div>;
 
   return (
-    <section>
-      <h2>{test.title} (приватный)</h2>
-      {questions.map((q) => (
-        <QuestionView
-          key={q.id}
-          q={q}
-          selected={answers[q.id]}
-          onSelect={(questionId, optionId) =>
-            setAnswers((prev) => ({
-              ...prev,
-              [questionId]: optionId
-            }))
-          }
-        />
-      ))}
-      <button onClick={submit}>Отправить</button>
-    </section>
-  );
-}
-
-function ResultsPage() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    api("/tests/me/results")
-      .then(setData)
-      .catch((e) => setError(e.message));
-  }, []);
-
-  if (error) return <p className="error">{error}</p>;
-  if (!data) return <p>Загрузка...</p>;
-
-  return (
-    <section>
-      <h2>Мои лучшие оценки</h2>
-      <div className="list">
-        {data.bestByTest.map((item) => (
-          <div className="card" key={item.testId}>
-            <h3>{item.testTitle}</h3>
-            <p>Оценка: {item.grade}/10</p>
-            <p>Процент: {item.percent.toFixed(1)}%</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AdminPage() {
-  const [tests, setTests] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [linkToken, setLinkToken] = useState("");
-  const [error, setError] = useState("");
-
-  const [title, setTitle] = useState("");
-  const [questionText, setQuestionText] = useState("");
-  const [options, setOptions] = useState(["", "", ""]);
-  const [correctIndex, setCorrectIndex] = useState(0);
-  const [isPublic, setIsPublic] = useState(true);
-
-  useEffect(() => {
-    api("/admin/tests")
-      .then(setTests)
-      .catch((e) => setError(e.message));
-  }, []);
-
-  async function createSimpleTest(e) {
-    e.preventDefault();
-    setError("");
-
-    try {
-      const payload = {
-        title,
-        isPublic,
-        allowMultipleAttempts: isPublic,
-        questions: [
-          {
-            text: questionText,
-            options: options.filter(Boolean).map((text, idx) => ({
-              text,
-              isCorrect: idx === correctIndex
-            }))
-          }
-        ],
-        gradeRules: [
-          { minPercent: 0, grade: 2 },
-          { minPercent: 50, grade: 5 },
-          { minPercent: 70, grade: 7 },
-          { minPercent: 90, grade: 9 },
-          { minPercent: 100, grade: 10 }
-        ]
-      };
-      await api("/admin/tests", { method: "POST", body: JSON.stringify(payload) });
-      const updated = await api("/admin/tests");
-      setTests(updated);
-      setTitle("");
-      setQuestionText("");
-      setOptions(["", "", ""]);
-      setCorrectIndex(0);
-    } catch (e2) {
-      setError(e2.message);
-    }
-  }
-
-  async function loadStats(testId) {
-    try {
-      const res = await api(`/admin/tests/${testId}/stats`);
-      setStats(res);
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
-  async function createPrivateLink(testId) {
-    try {
-      const res = await api("/tests/admin/create-link", {
-        method: "POST",
-        body: JSON.stringify({ testId })
-      });
-      setLinkToken(res.token);
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
-  return (
-    <section>
-      <h2>Админ-панель</h2>
-      {error && <p className="error">{error}</p>}
-
-      <form className="card" onSubmit={createSimpleTest}>
-        <h3>Создать тест (быстрая форма)</h3>
-        <label>
-          Название:
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required />
-        </label>
-        <label>
-          Вопрос:
-          <input value={questionText} onChange={(e) => setQuestionText(e.target.value)} required />
-        </label>
-        {options.map((v, idx) => (
-          <label key={idx}>
-            Вариант {idx + 1}:
-            <input
-              value={v}
-              onChange={(e) => {
-                const copy = [...options];
-                copy[idx] = e.target.value;
-                setOptions(copy);
-              }}
-              required={idx < 2}
-            />
-          </label>
-        ))}
-        <label>
-          Индекс правильного (0..{options.length - 1}):
-          <input
-            type="number"
-            min="0"
-            max={options.length - 1}
-            value={correctIndex}
-            onChange={(e) => setCorrectIndex(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Публичный:
-          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-        </label>
-        <button type="submit">Создать</button>
-      </form>
-
-      {linkToken && (
-        <div className="card">
-          <p>Приватная ссылка:</p>
-          <code>{`${window.location.origin}/access/${linkToken}`}</code>
+    <div className="appShell">
+      <header className="topBar">
+        <div>
+          <p className="topLabel">РўРµСЃС‚ РїРѕ РєРѕРґСѓ</p>
+          <h1>{test.title}</h1>
         </div>
-      )}
+        <button className="ghostBtn" onClick={() => navigate("/")}>
+          РќР°Р·Р°Рґ
+        </button>
+      </header>
 
-      <div className="list">
-        {tests.map((t) => (
-          <div key={t.id} className="card">
-            <h3>{t.title}</h3>
-            <p>Попыток: {t.attemptsCount}</p>
-            <button onClick={() => loadStats(t.id)}>Статистика</button>
-            {!t.isPublic && <button onClick={() => createPrivateLink(t.id)}>Сгенерировать ссылку</button>}
-          </div>
-        ))}
-      </div>
-
-      {stats && (
-        <div className="card">
-          <h3>Статистика: {stats.test.title}</h3>
-          <p>Уникальных пользователей: {stats.uniqueUsers}</p>
-          <p>Средняя оценка: {stats.avgGrade.toFixed(2)}</p>
-          {stats.bestAttemptsByUser.map((r) => (
-            <p key={r.user.id}>
-              {r.user.firstName || r.user.username || r.user.telegramId}: {r.grade}/10 ({r.percent.toFixed(1)}%)
-            </p>
-          ))}
-        </div>
-      )}
-    </section>
+      <main className="contentArea">
+        {result ? (
+          <article className="card">
+            <h2>Р РµР·СѓР»СЊС‚Р°С‚: {result.grade}/10</h2>
+            <p>РџСЂРѕС†РµРЅС‚: {result.percent.toFixed(1)}%</p>
+            <button className="primaryBtn" onClick={() => navigate("/")}>
+              Рљ С‚РµСЃС‚Р°Рј
+            </button>
+          </article>
+        ) : (
+          <>
+            {test.questions.map((q) => (
+              <QuestionCard
+                key={q.id}
+                q={q}
+                selected={answers[q.id]}
+                onSelect={(questionId, optionId) =>
+                  setAnswers((prev) => ({
+                    ...prev,
+                    [questionId]: optionId
+                  }))
+                }
+              />
+            ))}
+            <button className="primaryBtn" onClick={submit}>
+              РћС‚РїСЂР°РІРёС‚СЊ
+            </button>
+          </>
+        )}
+      </main>
+    </div>
   );
 }
 
 export default function App() {
   const { user, loading, error, setUser } = useSession();
 
-  if (loading) return <div className="container">Проверка авторизации...</div>;
+  if (loading) return <div className="appShell"><p className="mutedText">РџСЂРѕРІРµСЂРєР° Р°РІС‚РѕСЂРёР·Р°С†РёРё...</p></div>;
   if (!user) {
     return (
-      <div className="container">
-        <h1>Spelling Tests</h1>
-        <p className="error">{error || "Не удалось авторизоваться"}</p>
+      <div className="appShell">
+        <header className="topBar">
+          <div>
+            <p className="topLabel">Spelling Tests</p>
+            <h1>РћС€РёР±РєР° РІС…РѕРґР°</h1>
+          </div>
+        </header>
+        <main className="contentArea">
+          <p className="errorText">{error || "РќРµ СѓРґР°Р»РѕСЃСЊ Р°РІС‚РѕСЂРёР·РѕРІР°С‚СЊСЃСЏ"}</p>
+        </main>
       </div>
     );
   }
 
   return (
-    <Layout
-      user={user}
-      onLogout={() => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        setUser(null);
-      }}
-    />
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <Shell
+            user={user}
+            onLogout={() => {
+              localStorage.removeItem("token");
+              localStorage.removeItem("user");
+              setUser(null);
+            }}
+          />
+        }
+      />
+      <Route path="/test/:id" element={<SolveTestPage />} />
+      <Route path="/access/:token" element={<PrivateTestPage />} />
+      <Route path="/admin/tests/:id/edit" element={<AdminEditTestPage user={user} />} />
+      <Route path="*" element={<Navigate to="/" />} />
+    </Routes>
   );
 }
-

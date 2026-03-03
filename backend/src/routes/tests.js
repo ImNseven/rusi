@@ -17,6 +17,19 @@ function toBestGrade(rules, percent) {
   return grade;
 }
 
+async function generateUniqueShortCode() {
+  for (let i = 0; i < 30; i += 1) {
+    const code = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
+    const exists = await prisma.testAccessLink.findUnique({
+      where: { shortCode: code },
+      select: { id: true }
+    });
+    if (!exists) return code;
+  }
+
+  throw new Error("Unable to generate unique short code");
+}
+
 router.get("/", requireAuth, async (req, res) => {
   const tests = await prisma.test.findMany({
     where: { isPublic: true },
@@ -93,6 +106,44 @@ router.post("/access/:token", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "Attempt already used for this test link" });
   }
   return res.json({ linkId: link.id, test: link.test });
+});
+
+router.post("/access-code", requireAuth, async (req, res) => {
+  const schema = z.object({
+    code: z.string().regex(/^\d{5}$/)
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Code must contain exactly 5 digits" });
+
+  const link = await prisma.testAccessLink.findUnique({
+    where: { shortCode: parsed.data.code },
+    include: {
+      test: {
+        include: {
+          questions: {
+            orderBy: { sortOrder: "asc" },
+            include: { options: { select: { id: true, text: true } } }
+          }
+        }
+      },
+      uses: {
+        where: { userId: req.user.sub }
+      }
+    }
+  });
+
+  if (!link) return res.status(404).json({ error: "Код не найден" });
+  if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
+    return res.status(410).json({ error: "Срок действия кода истек" });
+  }
+  if (link.maxUses && link.uses.length >= link.maxUses) {
+    return res.status(403).json({ error: "Этот код уже использован" });
+  }
+
+  return res.json({
+    token: link.token,
+    test: link.test
+  });
 });
 
 router.post("/:id/submit", requireAuth, async (req, res) => {
@@ -218,30 +269,77 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
 });
 
 router.get("/me/results", requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.sub },
+    select: {
+      id: true,
+      telegramId: true,
+      username: true,
+      firstName: true,
+      lastName: true,
+      role: true
+    }
+  });
+
   const attempts = await prisma.attempt.findMany({
     where: { userId: req.user.sub },
-    include: { test: { select: { id: true, title: true } } },
+    include: { test: { select: { id: true, title: true, isPublic: true } } },
     orderBy: { createdAt: "desc" }
   });
 
-  const bestMap = new Map();
+  const publicBestMap = new Map();
+  const privateAttemptMap = new Map();
   for (const at of attempts) {
-    const key = at.testId;
-    const prev = bestMap.get(key);
-    if (!prev || at.grade > prev.grade || (at.grade === prev.grade && at.percent > prev.percent)) {
-      bestMap.set(key, at);
+    if (at.test.isPublic) {
+      const prevPublic = publicBestMap.get(at.testId);
+      if (
+        !prevPublic ||
+        at.grade > prevPublic.grade ||
+        (at.grade === prevPublic.grade && at.percent > prevPublic.percent)
+      ) {
+        publicBestMap.set(at.testId, at);
+      }
+      continue;
+    }
+
+    // Private tests are solved once by design, so we keep the latest recorded attempt.
+    if (!privateAttemptMap.has(at.testId)) {
+      privateAttemptMap.set(at.testId, at);
     }
   }
 
-  return res.json({
-    attempts,
-    bestByTest: [...bestMap.values()].map((at) => ({
+  const profileTests = [...publicBestMap.values(), ...privateAttemptMap.values()]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map((at) => ({
       testId: at.testId,
-      testTitle: attempts.find((x) => x.testId === at.testId)?.test.title,
+      testTitle: at.test.title,
+      isPublic: at.test.isPublic,
+      grade: at.grade,
+      percent: at.percent,
+      passedAt: at.createdAt
+    }));
+
+  return res.json({
+    user: user
+      ? {
+          id: user.id,
+          telegramId: user.telegramId.toString(),
+          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role
+        }
+      : null,
+    attempts,
+    profileTests,
+    bestByTest: [...publicBestMap.values()].map((at) => ({
+      testId: at.testId,
+      testTitle: at.test.title,
       grade: at.grade,
       percent: at.percent
     }))
-  });
+  }
+  );
 });
 
 router.post("/admin/create-link", requireAuth, async (req, res) => {
@@ -258,18 +356,21 @@ router.post("/admin/create-link", requireAuth, async (req, res) => {
 
   const test = await prisma.test.findUnique({ where: { id: testId } });
   if (!test) return res.status(404).json({ error: "Test not found" });
+  if (test.createdById !== req.user.sub) return res.status(403).json({ error: "Forbidden" });
 
   const token = crypto.randomBytes(24).toString("hex");
+  const shortCode = await generateUniqueShortCode();
   const link = await prisma.testAccessLink.create({
     data: {
       testId,
       token,
+      shortCode,
       maxUses: 1,
       expiresAt: expiresAt ? new Date(expiresAt) : null
     }
   });
 
-  return res.json({ token: link.token });
+  return res.json({ token: link.token, shortCode: link.shortCode });
 });
 
 export default router;
