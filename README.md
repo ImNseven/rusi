@@ -47,6 +47,8 @@ MVP платформа для проверки правильного напис
    - `BOT_TOKEN`
    - `ADMIN_TELEGRAM_ID`
    - `WEBAPP_URL` (url фронтенда, напр. `https://spelling-frontend.onrender.com`)
+   - `CORS_ORIGIN` (тот же url фронтенда, напр. `https://app.your-domain.by`)
+   - `VITE_API_URL` (url backend, напр. `https://spelling-backend.onrender.com`)
 4. После первого деплоя backend выполнить:
    - `npx prisma migrate deploy`
 5. В BotFather:
