@@ -116,7 +116,7 @@ body,
   gap: 6px;
 }
 
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 textarea {
   width: 100%;
   border: 1px solid #cbd5e1;
@@ -131,11 +131,21 @@ textarea {
 }
 
 .checkRow {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
   font-weight: 500;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.checkRow input[type="checkbox"],
+.checkRow input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin: 0;
 }
 
 .optionRow {

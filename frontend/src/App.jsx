@@ -46,7 +46,7 @@ function useSession() {
   return { user, loading, error, setUser };
 }
 
-function Shell({ user, onLogout }) {
+function Shell({ user }) {
   const [activeTab, setActiveTab] = useState("tests");
 
   const tabs = [
@@ -66,9 +66,6 @@ function Shell({ user, onLogout }) {
           <p className="topLabel">Spelling Tests</p>
           <h1>{displayName(user)}</h1>
         </div>
-        <button className="ghostBtn" onClick={onLogout}>
-          Выйти
-        </button>
       </header>
 
       <main className="contentArea">
@@ -464,19 +461,33 @@ function TestForm({ initialValue, submitText, onSubmit }) {
 
 function AddTestTab() {
   const [message, setMessage] = useState("");
+  const [newCode, setNewCode] = useState("");
 
   async function createTest(payload) {
-    await api("/admin/tests", {
+    const created = await api("/admin/tests", {
       method: "POST",
       body: JSON.stringify(payload)
     });
-    setMessage("Тест создан");
+
+    if (!payload.isPublic) {
+      const access = await api("/tests/admin/create-link", {
+        method: "POST",
+        body: JSON.stringify({ testId: created.id })
+      });
+      setNewCode(access.shortCode || "");
+      setMessage("Непубличный тест создан. Доступ только по 5-значному коду.");
+      return;
+    }
+
+    setNewCode("");
+    setMessage("Публичный тест создан");
   }
 
   return (
     <section>
       <h2>Добавить тест</h2>
       {message && <p className="okText">{message}</p>}
+      {newCode && <p className="codeBadge">Код: {newCode}</p>}
       <TestForm submitText="Создать тест" onSubmit={createTest} />
     </section>
   );
@@ -738,7 +749,7 @@ function PrivateTestPage() {
 }
 
 export default function App() {
-  const { user, loading, error, setUser } = useSession();
+  const { user, loading, error } = useSession();
 
   if (loading) return <div className="appShell"><p className="mutedText">Проверка авторизации...</p></div>;
   if (!user) {
@@ -762,14 +773,7 @@ export default function App() {
       <Route
         path="/"
         element={
-          <Shell
-            user={user}
-            onLogout={() => {
-              localStorage.removeItem("token");
-              localStorage.removeItem("user");
-              setUser(null);
-            }}
-          />
+          <Shell user={user} />
         }
       />
       <Route path="/test/:id" element={<SolveTestPage />} />

@@ -30,6 +30,10 @@ async function generateUniqueShortCode() {
   throw new Error("Unable to generate unique short code");
 }
 
+function isShortCodeColumnMissing(error) {
+  return error?.code === "P2022" && String(error?.meta?.column || "").includes("TestAccessLink.shortCode");
+}
+
 router.get("/", requireAuth, async (req, res) => {
   const tests = await prisma.test.findMany({
     where: { isPublic: true },
@@ -115,22 +119,30 @@ router.post("/access-code", requireAuth, async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Code must contain exactly 5 digits" });
 
-  const link = await prisma.testAccessLink.findUnique({
-    where: { shortCode: parsed.data.code },
-    include: {
-      test: {
-        include: {
-          questions: {
-            orderBy: { sortOrder: "asc" },
-            include: { options: { select: { id: true, text: true } } }
+  let link;
+  try {
+    link = await prisma.testAccessLink.findUnique({
+      where: { shortCode: parsed.data.code },
+      include: {
+        test: {
+          include: {
+            questions: {
+              orderBy: { sortOrder: "asc" },
+              include: { options: { select: { id: true, text: true } } }
+            }
           }
+        },
+        uses: {
+          where: { userId: req.user.sub }
         }
-      },
-      uses: {
-        where: { userId: req.user.sub }
       }
+    });
+  } catch (error) {
+    if (isShortCodeColumnMissing(error)) {
+      return res.status(500).json({ error: "Требуется миграция базы данных: добавьте поле shortCode" });
     }
-  });
+    throw error;
+  }
 
   if (!link) return res.status(404).json({ error: "Код не найден" });
   if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
@@ -359,16 +371,24 @@ router.post("/admin/create-link", requireAuth, async (req, res) => {
   if (test.createdById !== req.user.sub) return res.status(403).json({ error: "Forbidden" });
 
   const token = crypto.randomBytes(24).toString("hex");
-  const shortCode = await generateUniqueShortCode();
-  const link = await prisma.testAccessLink.create({
-    data: {
-      testId,
-      token,
-      shortCode,
-      maxUses: 1,
-      expiresAt: expiresAt ? new Date(expiresAt) : null
+  let link;
+  try {
+    const shortCode = await generateUniqueShortCode();
+    link = await prisma.testAccessLink.create({
+      data: {
+        testId,
+        token,
+        shortCode,
+        maxUses: 1,
+        expiresAt: expiresAt ? new Date(expiresAt) : null
+      }
+    });
+  } catch (error) {
+    if (isShortCodeColumnMissing(error)) {
+      return res.status(500).json({ error: "Требуется миграция базы данных: добавьте поле shortCode" });
     }
-  });
+    throw error;
+  }
 
   return res.json({ token: link.token, shortCode: link.shortCode });
 });
