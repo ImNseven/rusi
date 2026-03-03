@@ -10,6 +10,20 @@ function typeLabel(kind) {
   return kind === "CARDS" ? "Карточки" : "Тест";
 }
 
+async function copyText(value) {
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const input = document.createElement("input");
+  input.value = value;
+  document.body.appendChild(input);
+  input.select();
+  document.execCommand("copy");
+  document.body.removeChild(input);
+}
+
 function useSession() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -172,6 +186,7 @@ function FindTestTab() {
 }
 
 function ProfileTab({ user }) {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [adminTests, setAdminTests] = useState([]);
   const [error, setError] = useState("");
@@ -193,8 +208,7 @@ function ProfileTab({ user }) {
 
   async function makeLink(test) {
     if (test.isPublic) {
-      const url = `${window.location.origin}/test/${test.id}`;
-      setLinks((prev) => ({ ...prev, [test.id]: url }));
+      setLinks((prev) => ({ ...prev, [test.id]: { url } }));
       return;
     }
 
@@ -203,7 +217,7 @@ function ProfileTab({ user }) {
       body: JSON.stringify({ testId: test.id })
     });
     const url = `${window.location.origin}/access/${data.token}`;
-    setLinks((prev) => ({ ...prev, [test.id]: `${url} (код ${data.shortCode})` }));
+    setLinks((prev) => ({ ...prev, [test.id]: { url, code: data.shortCode } }));
   }
 
   async function loadStats(test) {
@@ -258,11 +272,25 @@ function ProfileTab({ user }) {
                   <button className="secondaryBtn" onClick={() => makeLink(test)}>
                     Ссылка
                   </button>
+                  <button className="secondaryBtn" onClick={() => navigate(`/admin/tests/${test.id}/edit`)}>
+                    Редактировать
+                  </button>
                   <button className="secondaryBtn" onClick={() => loadStats(test)}>
                     Статистика
                   </button>
                 </div>
-                {links[test.id] && <p className="mutedText">{links[test.id]}</p>}
+                {links[test.id] && (
+                  <button
+                    className="linkCopyBtn"
+                    type="button"
+                    onClick={() =>
+                      copyText(links[test.id].url).catch(() => setError("Не удалось скопировать ссылку"))
+                    }
+                  >
+                    {links[test.id].url}
+                    {links[test.id].code ? ` (код ${links[test.id].code})` : ""}
+                  </button>
+                )}
               </article>
             ))}
           </div>
@@ -378,10 +406,16 @@ function normalizeDraft(draft) {
   };
 }
 
-function TestForm({ onSubmit, submitText }) {
-  const [draft, setDraft] = useState(makeDraft());
+function TestForm({ onSubmit, submitText, initialDraft = null, resetOnSuccess = true }) {
+  const [draft, setDraft] = useState(initialDraft || makeDraft());
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (initialDraft) {
+      setDraft(clone(initialDraft));
+    }
+  }, [initialDraft]);
 
   function setQuestion(idx, updater) {
     setDraft((prev) => {
@@ -436,7 +470,9 @@ function TestForm({ onSubmit, submitText }) {
     setSaving(true);
     try {
       await onSubmit(payload);
-      setDraft(makeDraft());
+      if (resetOnSuccess) {
+        setDraft(makeDraft());
+      }
     } catch (e2) {
       setError(e2.message);
     } finally {
@@ -603,10 +639,50 @@ function AddTestTab() {
     <section>
       <h2>Добавить</h2>
       {message && <p className="okText">{message}</p>}
-      {link && <p className="mutedText">Ссылка: {link}</p>}
+      {link && (
+        <button className="linkCopyBtn" type="button" onClick={() => copyText(link).catch(() => setMessage("Не удалось скопировать"))}>
+          Ссылка: {link} (нажми, чтобы скопировать)
+        </button>
+      )}
       <TestForm onSubmit={create} submitText="Сохранить" />
     </section>
   );
+}
+
+function mapTestToDraft(test) {
+  if (test.kind === "CARDS") {
+    return {
+      kind: "CARDS",
+      title: test.title || "",
+      description: test.description || "",
+      isPublic: test.isPublic,
+      allowMultipleAttempts: test.allowMultipleAttempts,
+      cardLeftLabel: test.cardLeftLabel || "",
+      cardRightLabel: test.cardRightLabel || "",
+      questions: test.questions.map((q) => ({
+        text: q.text,
+        explanation: q.explanation || "",
+        correctSide: q.cardCorrectSide || "LEFT"
+      })),
+      gradeRules: test.gradeRules || defaultGradeRules()
+    };
+  }
+
+  return {
+    kind: "QUIZ",
+    title: test.title || "",
+    description: test.description || "",
+    isPublic: test.isPublic,
+    allowMultipleAttempts: test.allowMultipleAttempts,
+    cardLeftLabel: "",
+    cardRightLabel: "",
+    questions: test.questions.map((q) => ({
+      text: q.text,
+      explanation: q.explanation || "",
+      options: q.options.map((o) => ({ text: o.text, isCorrect: o.isCorrect }))
+    })),
+    gradeRules: test.gradeRules || defaultGradeRules()
+  };
 }
 
 function QuestionCard({ q, selected, onSelect, checked, feedback }) {
@@ -822,7 +898,47 @@ function PrivateTestPage() {
 
 function AdminEditTestPage({ user }) {
   if (user.role !== "ADMIN") return <Navigate to="/" />;
-  return <Navigate to="/" />;
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [draft, setDraft] = useState(null);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  useEffect(() => {
+    api(`/admin/tests/${id}`)
+      .then((data) => setDraft(mapTestToDraft(data)))
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  async function save(payload) {
+    setError("");
+    await api(`/admin/tests/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+    setOk("Изменения сохранены");
+  }
+
+  return (
+    <div className="appShell">
+      <header className="topBar">
+        <div>
+          <p className="topLabel">Редактирование</p>
+          <h1>Набор</h1>
+        </div>
+        <button className="ghostBtn" onClick={() => navigate("/")}>Назад</button>
+      </header>
+      <main className="contentArea">
+        {error && <p className="errorText">{error}</p>}
+        {ok && <p className="okText">{ok}</p>}
+        {!draft ? (
+          <p className="mutedText">Загрузка...</p>
+        ) : (
+          <TestForm onSubmit={save} submitText="Сохранить изменения" initialDraft={draft} resetOnSuccess={false} />
+        )}
+      </main>
+    </div>
+  );
 }
 
 export default function App() {

@@ -265,6 +265,16 @@ textarea {
   gap: 4px;
 }
 
+.linkCopyBtn {
+  border: 1px dashed #94a3b8;
+  background: #f8fafc;
+  color: #1e293b;
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
 .hintImage {
   width: 100%;
   max-width: 280px;
