@@ -12,6 +12,16 @@ enum UserRole {
   STUDENT
 }
 
+enum TestKind {
+  QUIZ
+  CARDS
+}
+
+enum CardSide {
+  LEFT
+  RIGHT
+}
+
 model User {
   id          String    @id @default(cuid())
   telegramId  BigInt    @unique
@@ -30,6 +40,9 @@ model Test {
   id                     String       @id @default(cuid())
   title                  String
   description            String?
+  kind                   TestKind     @default(QUIZ)
+  cardLeftLabel          String?
+  cardRightLabel         String?
   isPublic               Boolean      @default(true)
   allowMultipleAttempts  Boolean      @default(true)
   createdById            String
@@ -47,6 +60,8 @@ model Question {
   testId     String
   test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
   text       String
+  explanation String?
+  cardCorrectSide CardSide?
   imageUrl   String?
   sortOrder  Int
   options    Option[]

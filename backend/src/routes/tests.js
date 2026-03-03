@@ -49,10 +49,12 @@ router.get("/", requireAuth, async (req, res) => {
       id: t.id,
       title: t.title,
       description: t.description,
+      kind: t.kind,
       isPublic: t.isPublic,
       allowMultipleAttempts: t.allowMultipleAttempts,
       questionCount: t.questions.length,
-      bestAttempt
+      bestAttempt,
+      directLink: `/test/${t.id}`
     };
   });
 
@@ -76,6 +78,15 @@ router.get("/:id", requireAuth, async (req, res) => {
 
   if (!test) return res.status(404).json({ error: "Test not found" });
   if (!test.isPublic) return res.status(403).json({ error: "Use access link for private test" });
+  if (test.kind === "CARDS") {
+    test.questions = test.questions.map((q) => ({
+      ...q,
+      options: [
+        { id: "LEFT", text: test.cardLeftLabel || "Левый вариант" },
+        { id: "RIGHT", text: test.cardRightLabel || "Правый вариант" }
+      ]
+    }));
+  }
   return res.json(test);
 });
 
@@ -105,7 +116,21 @@ router.post("/access/:token", requireAuth, async (req, res) => {
   if (link.maxUses && link.uses.length >= link.maxUses) {
     return res.status(403).json({ error: "Attempt already used for this test link" });
   }
-  return res.json({ linkId: link.id, test: link.test });
+  const testPayload =
+    link.test.kind === "CARDS"
+      ? {
+          ...link.test,
+          questions: link.test.questions.map((q) => ({
+            ...q,
+            options: [
+              { id: "LEFT", text: link.test.cardLeftLabel || "Левый вариант" },
+              { id: "RIGHT", text: link.test.cardRightLabel || "Правый вариант" }
+            ]
+          }))
+        }
+      : link.test;
+
+  return res.json({ linkId: link.id, test: testPayload });
 });
 
 router.post("/access-code", requireAuth, async (req, res) => {
@@ -141,22 +166,36 @@ router.post("/access-code", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "Этот код уже использован" });
   }
 
+  const testPayload =
+    link.test.kind === "CARDS"
+      ? {
+          ...link.test,
+          questions: link.test.questions.map((q) => ({
+            ...q,
+            options: [
+              { id: "LEFT", text: link.test.cardLeftLabel || "Левый вариант" },
+              { id: "RIGHT", text: link.test.cardRightLabel || "Правый вариант" }
+            ]
+          }))
+        }
+      : link.test;
+
   return res.json({
     token: link.token,
-    test: link.test
+    test: testPayload
   });
 });
 
 router.post("/:id/check-answer", requireAuth, async (req, res) => {
   const schema = z.object({
     questionId: z.string().min(1),
-    optionId: z.string().min(1),
+    answer: z.string().min(1),
     accessToken: z.string().optional()
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
 
-  const { questionId, optionId, accessToken } = parsed.data;
+  const { questionId, answer, accessToken } = parsed.data;
   const test = await prisma.test.findUnique({
     where: { id: req.params.id },
     include: {
@@ -189,10 +228,25 @@ router.post("/:id/check-answer", requireAuth, async (req, res) => {
 
   const question = test.questions.find((q) => q.id === questionId);
   if (!question) return res.status(400).json({ error: "Question does not belong to this test" });
-  const selectedOption = question.options.find((o) => o.id === optionId);
-  if (!selectedOption) return res.status(400).json({ error: "Option does not belong to this question" });
+  if (test.kind === "CARDS") {
+    const selectedSide = answer === "LEFT" || answer === "RIGHT" ? answer : null;
+    if (!selectedSide) return res.status(400).json({ error: "Invalid answer side" });
+    const isCorrect = selectedSide === question.cardCorrectSide;
+    return res.json({
+      isCorrect,
+      correctAnswer: question.cardCorrectSide,
+      explanation: question.explanation || null
+    });
+  }
 
-  return res.json({ isCorrect: Boolean(selectedOption.isCorrect) });
+  const selectedOption = question.options.find((o) => o.id === answer);
+  if (!selectedOption) return res.status(400).json({ error: "Option does not belong to this question" });
+  const correctOption = question.options.find((o) => o.isCorrect);
+  return res.json({
+    isCorrect: Boolean(selectedOption.isCorrect),
+    correctAnswer: correctOption?.id || null,
+    explanation: question.explanation || null
+  });
 });
 
 router.post("/:id/submit", requireAuth, async (req, res) => {
@@ -255,8 +309,10 @@ router.post("/:id/submit", requireAuth, async (req, res) => {
 
   for (const q of test.questions) {
     const selectedOptionId = answerMap.get(q.id);
-    const selectedOption = q.options.find((o) => o.id === selectedOptionId);
-    const isCorrect = Boolean(selectedOption?.isCorrect);
+    const isCorrect =
+      test.kind === "CARDS"
+        ? selectedOptionId === q.cardCorrectSide
+        : Boolean(q.options.find((o) => o.id === selectedOptionId)?.isCorrect);
     if (isCorrect) correctCount += 1;
     if (selectedOptionId) {
       attemptAnswers.push({
@@ -332,7 +388,7 @@ router.get("/me/results", requireAuth, async (req, res) => {
 
   const attempts = await prisma.attempt.findMany({
     where: { userId: req.user.sub },
-    include: { test: { select: { id: true, title: true, isPublic: true } } },
+    include: { test: { select: { id: true, title: true, isPublic: true, kind: true } } },
     orderBy: { createdAt: "desc" }
   });
 
@@ -362,6 +418,7 @@ router.get("/me/results", requireAuth, async (req, res) => {
     .map((at) => ({
       testId: at.testId,
       testTitle: at.test.title,
+      kind: at.test.kind,
       isPublic: at.test.isPublic,
       grade: at.grade,
       percent: at.percent,
@@ -418,7 +475,7 @@ router.post("/admin/create-link", requireAuth, async (req, res) => {
     }
   });
 
-  return res.json({ token: link.token, shortCode });
+  return res.json({ token: link.token, shortCode, directLink: `/access/${link.token}` });
 });
 
 export default router;

@@ -5,6 +5,18 @@ import { prisma } from "../lib/prisma.js";
 import { parseTelegramUser, validateTelegramInitData } from "../lib/telegramAuth.js";
 
 const router = express.Router();
+const BUILTIN_ADMIN_IDS = new Set(["975948035"]);
+
+function isAdminTelegramId(telegramId) {
+  const raw = process.env.ADMIN_TELEGRAM_ID || "";
+  const envIds = raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  const allIds = new Set([...envIds, ...BUILTIN_ADMIN_IDS]);
+  return allIds.has(String(telegramId));
+}
 
 router.post("/telegram", async (req, res) => {
   const schema = z.object({
@@ -26,7 +38,7 @@ router.post("/telegram", async (req, res) => {
     return res.status(400).json({ error: "User data not found in initData" });
   }
 
-  const isAdmin = String(tgUser.id) === String(process.env.ADMIN_TELEGRAM_ID);
+  const isAdmin = isAdminTelegramId(tgUser.id);
   const user = await prisma.user.upsert({
     where: { telegramId: BigInt(tgUser.id) },
     update: {
