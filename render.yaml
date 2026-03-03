@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: spelling-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: spelling-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_TELEGRAM_ID
+        sync: false
+      - key: WEBAPP_URL
+        sync: false
+
+  - type: web
+    name: spelling-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run preview -- --host 0.0.0.0 --port 10000
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+
+databases:
+  - name: spelling-db
+    databaseName: spelling
+    user: spelling_user
+

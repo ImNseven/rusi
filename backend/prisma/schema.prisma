@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  STUDENT
+}
+
+model User {
+  id          String    @id @default(cuid())
+  telegramId  BigInt    @unique
+  username    String?
+  firstName   String?
+  lastName    String?
+  role        UserRole  @default(STUDENT)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  attempts    Attempt[]
+  tokensUsed  AccessUse[]
+}
+
+model Test {
+  id                     String       @id @default(cuid())
+  title                  String
+  description            String?
+  isPublic               Boolean      @default(true)
+  allowMultipleAttempts  Boolean      @default(true)
+  createdById            String
+  createdBy              User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  questions              Question[]
+  gradeRules             GradeRule[]
+  attempts               Attempt[]
+  accessLinks            TestAccessLink[]
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+}
+
+model Question {
+  id         String   @id @default(cuid())
+  testId     String
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  text       String
+  imageUrl   String?
+  sortOrder  Int
+  options    Option[]
+}
+
+model Option {
+  id          String   @id @default(cuid())
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text        String
+  isCorrect   Boolean  @default(false)
+}
+
+model GradeRule {
+  id          String   @id @default(cuid())
+  testId      String
+  test        Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  minPercent  Float
+  grade       Int
+}
+
+model Attempt {
+  id             String          @id @default(cuid())
+  testId         String
+  test           Test            @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  correctCount   Int
+  totalQuestions Int
+  percent        Float
+  grade          Int
+  answers        AttemptAnswer[]
+  createdAt      DateTime        @default(now())
+
+  @@index([testId, userId])
+}
+
+model AttemptAnswer {
+  id          String   @id @default(cuid())
+  attemptId   String
+  attempt     Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId  String
+  optionId    String
+  isCorrect   Boolean
+}
+
+model TestAccessLink {
+  id         String      @id @default(cuid())
+  testId     String
+  test       Test        @relation(fields: [testId], references: [id], onDelete: Cascade)
+  token      String      @unique
+  maxUses    Int?
+  expiresAt  DateTime?
+  uses       AccessUse[]
+  createdAt  DateTime    @default(now())
+}
+
+model AccessUse {
+  id            String         @id @default(cuid())
+  accessLinkId  String
+  accessLink    TestAccessLink @relation(fields: [accessLinkId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+
+  @@unique([accessLinkId, userId])
+}
+
