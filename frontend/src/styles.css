@@ -10,6 +10,7 @@
 body {
   margin: 0;
   background: #e9edf3;
+  overflow-x: hidden;
 }
 
 h1,
@@ -17,6 +18,14 @@ h2,
 h3,
 p {
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
 }
 
 .appShell {
@@ -25,6 +34,7 @@ p {
   min-height: 100vh;
   background: #f3f5f9;
   padding: 18px 16px 92px;
+  overflow-x: hidden;
 }
 
 .topBar {
@@ -74,6 +84,7 @@ p {
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .card h3 {
@@ -214,6 +225,7 @@ textarea {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 8px;
+  overflow-x: hidden;
 }
 
 .tabBtn {

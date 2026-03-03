@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api, getTelegramInitData } from "./api";
 
@@ -25,7 +25,7 @@ function useSession() {
     }
 
     if (!initData) {
-      setError("РћС‚РєСЂРѕР№ WebApp РёР· Telegram Р±РѕС‚Р°, С‡С‚РѕР±С‹ Р°РІС‚РѕСЂРёР·РѕРІР°С‚СЊСЃСЏ.");
+      setError("Открой WebApp из Telegram бота, чтобы авторизоваться.");
       setLoading(false);
       return;
     }
@@ -50,13 +50,13 @@ function Shell({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState("tests");
 
   const tabs = [
-    { key: "tests", label: "РўРµСЃС‚С‹" },
-    { key: "find", label: "РќР°Р№С‚Рё С‚РµСЃС‚" },
-    { key: "profile", label: "РњРѕР№ РїСЂРѕС„РёР»СЊ" }
+    { key: "tests", label: "Тесты" },
+    { key: "find", label: "Найти тест" },
+    { key: "profile", label: "Мой профиль" }
   ];
 
   if (user.role === "ADMIN") {
-    tabs.push({ key: "add", label: "Р”РѕР±Р°РІРёС‚СЊ С‚РµСЃС‚" });
+    tabs.push({ key: "add", label: "Добавить тест" });
   }
 
   return (
@@ -67,7 +67,7 @@ function Shell({ user, onLogout }) {
           <h1>{displayName(user)}</h1>
         </div>
         <button className="ghostBtn" onClick={onLogout}>
-          Р’С‹Р№С‚Рё
+          Выйти
         </button>
       </header>
 
@@ -106,19 +106,19 @@ function TestsTab() {
 
   return (
     <section>
-      <h2>РџСѓР±Р»РёС‡РЅС‹Рµ С‚РµСЃС‚С‹</h2>
+      <h2>Публичные тесты</h2>
       {error && <p className="errorText">{error}</p>}
       <div className="cardList">
         {tests.map((test) => (
           <article className="card" key={test.id}>
             <h3>{test.title}</h3>
-            <p className="mutedText">{test.description || "Р‘РµР· РѕРїРёСЃР°РЅРёСЏ"}</p>
+            <p className="mutedText">{test.description || "Без описания"}</p>
             <div className="metaList">
-              <p>Р’РѕРїСЂРѕСЃРѕРІ: {test.questionCount}</p>
-              <p>Р›СѓС‡С€Р°СЏ РѕС†РµРЅРєР°: {test.bestAttempt ? `${test.bestAttempt.grade}/10` : "РїРѕРєР° РЅРµС‚"}</p>
+              <p>Вопросов: {test.questionCount}</p>
+              <p>Лучшая оценка: {test.bestAttempt ? `${test.bestAttempt.grade}/10` : "пока нет"}</p>
             </div>
             <button className="primaryBtn" onClick={() => navigate(`/test/${test.id}`)}>
-              Р РµС€Р°С‚СЊ
+              Решать
             </button>
           </article>
         ))}
@@ -138,7 +138,7 @@ function FindTestTab() {
     setError("");
 
     if (!/^\d{5}$/.test(code)) {
-      setError("Р’РІРµРґРёС‚Рµ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ");
+      setError("Введите 5-значный код");
       return;
     }
 
@@ -158,11 +158,11 @@ function FindTestTab() {
 
   return (
     <section>
-      <h2>РќР°Р№С‚Рё С‚РµСЃС‚</h2>
-      <p className="mutedText">Р’РІРµРґРёС‚Рµ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ, РєРѕС‚РѕСЂС‹Р№ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р»Р° СЃРёСЃС‚РµРјР°.</p>
+      <h2>Найти тест</h2>
+      <p className="mutedText">Введите 5-значный код, который сгенерировала система.</p>
       <form className="card" onSubmit={onSubmit}>
         <label className="labelText">
-          РљРѕРґ С‚РµСЃС‚Р°
+          Код теста
           <input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
@@ -172,7 +172,7 @@ function FindTestTab() {
         </label>
         {error && <p className="errorText">{error}</p>}
         <button className="primaryBtn" type="submit" disabled={loading}>
-          {loading ? "РџСЂРѕРІРµСЂСЏРµРј..." : "РћС‚РєСЂС‹С‚СЊ С‚РµСЃС‚"}
+          {loading ? "Проверяем..." : "Открыть тест"}
         </button>
       </form>
     </section>
@@ -199,25 +199,25 @@ function ProfileTab({ user }) {
 
   return (
     <section>
-      <h2>РњРѕР№ РїСЂРѕС„РёР»СЊ</h2>
+      <h2>Мой профиль</h2>
       {error && <p className="errorText">{error}</p>}
       <div className="card">
         <h3>{displayName(user)}</h3>
-        <p className="mutedText">Р РѕР»СЊ: {user.role === "ADMIN" ? "РђРґРјРёРЅ" : "РЈС‡РµРЅРёРє"}</p>
+        <p className="mutedText">Роль: {user.role === "ADMIN" ? "Админ" : "Ученик"}</p>
       </div>
 
-      <h3 className="blockTitle">РџСЂРѕР№РґРµРЅРЅС‹Рµ С‚РµСЃС‚С‹</h3>
+      <h3 className="blockTitle">Пройденные тесты</h3>
       {!data ? (
-        <p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p>
+        <p className="mutedText">Загрузка...</p>
       ) : data.profileTests.length === 0 ? (
-        <p className="mutedText">Р’С‹ РµС‰Рµ РЅРµ РїСЂРѕС…РѕРґРёР»Рё С‚РµСЃС‚С‹</p>
+        <p className="mutedText">Вы еще не проходили тесты</p>
       ) : (
         <div className="cardList">
           {data.profileTests.map((item) => (
             <article className="card" key={item.testId}>
               <h3>{item.testTitle}</h3>
-              <p>{item.isPublic ? "РџСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚" : "РќРµРїСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚"}</p>
-              <p>{item.isPublic ? "Р›СѓС‡С€Р°СЏ РѕС†РµРЅРєР°" : "РћС†РµРЅРєР°"}: {item.grade}/10</p>
+              <p>{item.isPublic ? "Публичный тест" : "Непубличный тест"}</p>
+              <p>{item.isPublic ? "Лучшая оценка" : "Оценка"}: {item.grade}/10</p>
             </article>
           ))}
         </div>
@@ -225,14 +225,14 @@ function ProfileTab({ user }) {
 
       {user.role === "ADMIN" && (
         <>
-          <h3 className="blockTitle">РњРѕРё СЃРѕР·РґР°РЅРЅС‹Рµ С‚РµСЃС‚С‹</h3>
+          <h3 className="blockTitle">Мои созданные тесты</h3>
           <div className="cardList">
             {adminTests.map((test) => (
               <article className="card" key={test.id}>
                 <h3>{test.title}</h3>
-                <p>{test.isPublic ? "РџСѓР±Р»РёС‡РЅС‹Р№" : "РќРµРїСѓР±Р»РёС‡РЅС‹Р№"}</p>
+                <p>{test.isPublic ? "Публичный" : "Непубличный"}</p>
                 <button className="secondaryBtn" onClick={() => navigate(`/admin/tests/${test.id}/edit`)}>
-                  Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ
+                  Редактировать
                 </button>
               </article>
             ))}
@@ -309,7 +309,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
     );
 
     if (!payload.title || invalid) {
-      setError("РџСЂРѕРІРµСЂСЊС‚Рµ РЅР°Р·РІР°РЅРёРµ С‚РµСЃС‚Р°, РІРѕРїСЂРѕСЃС‹ Рё РІР°СЂРёР°РЅС‚С‹ РѕС‚РІРµС‚РѕРІ");
+      setError("Проверьте название теста, вопросы и варианты ответов");
       return;
     }
 
@@ -379,7 +379,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
     <form className="cardList" onSubmit={submit}>
       <article className="card">
         <label className="labelText">
-          РќР°Р·РІР°РЅРёРµ С‚РµСЃС‚Р°
+          Название теста
           <input
             value={draft.title}
             onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
@@ -387,7 +387,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
           />
         </label>
         <label className="labelText">
-          РћРїРёСЃР°РЅРёРµ
+          Описание
           <textarea
             value={draft.description}
             onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
@@ -406,7 +406,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
               }))
             }
           />
-          РџСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚
+          Публичный тест
         </label>
         {!draft.isPublic && (
           <label className="checkRow">
@@ -415,7 +415,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
               checked={draft.allowMultipleAttempts}
               onChange={(e) => setDraft((prev) => ({ ...prev, allowMultipleAttempts: e.target.checked }))}
             />
-            Р Р°Р·СЂРµС€РёС‚СЊ РЅРµСЃРєРѕР»СЊРєРѕ РїРѕРїС‹С‚РѕРє
+            Разрешить несколько попыток
           </label>
         )}
       </article>
@@ -423,7 +423,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
       {draft.questions.map((q, qIdx) => (
         <article className="card" key={`q-${qIdx}`}>
           <label className="labelText">
-            Р’РѕРїСЂРѕСЃ {qIdx + 1}
+            Вопрос {qIdx + 1}
             <input value={q.text} onChange={(e) => setQuestionText(qIdx, e.target.value)} required />
           </label>
           {q.options.map((option, oIdx) => (
@@ -431,7 +431,7 @@ function TestForm({ initialValue, submitText, onSubmit }) {
               <input
                 value={option.text}
                 onChange={(e) => setOptionText(qIdx, oIdx, e.target.value)}
-                placeholder={`Р’Р°СЂРёР°РЅС‚ ${oIdx + 1}`}
+                placeholder={`Вариант ${oIdx + 1}`}
               />
               <label className="checkRow">
                 <input
@@ -440,23 +440,23 @@ function TestForm({ initialValue, submitText, onSubmit }) {
                   checked={option.isCorrect}
                   onChange={() => setCorrect(qIdx, oIdx)}
                 />
-                Р’РµСЂРЅС‹Р№
+                Верный
               </label>
             </div>
           ))}
           <button className="secondaryBtn" type="button" onClick={() => addOption(qIdx)}>
-            + Р’Р°СЂРёР°РЅС‚
+            + Вариант
           </button>
         </article>
       ))}
 
       <button className="secondaryBtn" type="button" onClick={addQuestion}>
-        + Р’РѕРїСЂРѕСЃ
+        + Вопрос
       </button>
 
       {error && <p className="errorText">{error}</p>}
       <button className="primaryBtn" type="submit" disabled={saving}>
-        {saving ? "РЎРѕС…СЂР°РЅСЏРµРј..." : submitText}
+        {saving ? "Сохраняем..." : submitText}
       </button>
     </form>
   );
@@ -470,14 +470,14 @@ function AddTestTab() {
       method: "POST",
       body: JSON.stringify(payload)
     });
-    setMessage("РўРµСЃС‚ СЃРѕР·РґР°РЅ");
+    setMessage("Тест создан");
   }
 
   return (
     <section>
-      <h2>Р”РѕР±Р°РІРёС‚СЊ С‚РµСЃС‚</h2>
+      <h2>Добавить тест</h2>
       {message && <p className="okText">{message}</p>}
-      <TestForm submitText="РЎРѕР·РґР°С‚СЊ С‚РµСЃС‚" onSubmit={createTest} />
+      <TestForm submitText="Создать тест" onSubmit={createTest} />
     </section>
   );
 }
@@ -537,27 +537,27 @@ function AdminEditTestPage({ user }) {
     <div className="appShell">
       <header className="topBar">
         <div>
-          <p className="topLabel">Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ С‚РµСЃС‚Р°</p>
-          <h1>РђРґРјРёРЅ</h1>
+          <p className="topLabel">Редактирование теста</p>
+          <h1>Админ</h1>
         </div>
         <button className="ghostBtn" onClick={() => navigate("/")}>
-          РќР°Р·Р°Рґ
+          Назад
         </button>
       </header>
 
       <main className="contentArea">
         {error && <p className="errorText">{error}</p>}
         {!initial ? (
-          <p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p>
+          <p className="mutedText">Загрузка...</p>
         ) : (
           <>
             <div className="card">
               <button className="secondaryBtn" onClick={createCode}>
-                РЎРіРµРЅРµСЂРёСЂРѕРІР°С‚СЊ 5-Р·РЅР°С‡РЅС‹Р№ РєРѕРґ
+                Сгенерировать 5-значный код
               </button>
-              {code && <p className="codeBadge">РљРѕРґ: {code}</p>}
+              {code && <p className="codeBadge">Код: {code}</p>}
             </div>
-            <TestForm initialValue={initial} submitText="РЎРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ" onSubmit={saveTest} />
+            <TestForm initialValue={initial} submitText="Сохранить изменения" onSubmit={saveTest} />
           </>
         )}
       </main>
@@ -621,28 +621,28 @@ function SolveTestPage() {
   }
 
   if (error) return <div className="appShell"><p className="errorText">{error}</p></div>;
-  if (!test) return <div className="appShell"><p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p></div>;
+  if (!test) return <div className="appShell"><p className="mutedText">Загрузка...</p></div>;
 
   return (
     <div className="appShell">
       <header className="topBar">
         <div>
-          <p className="topLabel">РџСѓР±Р»РёС‡РЅС‹Р№ С‚РµСЃС‚</p>
+          <p className="topLabel">Публичный тест</p>
           <h1>{test.title}</h1>
         </div>
         <button className="ghostBtn" onClick={() => navigate("/")}>
-          РќР°Р·Р°Рґ
+          Назад
         </button>
       </header>
 
       <main className="contentArea">
         {result ? (
           <article className="card">
-            <h2>Р РµР·СѓР»СЊС‚Р°С‚: {result.grade}/10</h2>
-            <p>РџСЂР°РІРёР»СЊРЅРѕ: {result.correctCount} РёР· {result.totalQuestions}</p>
-            <p>РџСЂРѕС†РµРЅС‚: {result.percent.toFixed(1)}%</p>
+            <h2>Результат: {result.grade}/10</h2>
+            <p>Правильно: {result.correctCount} из {result.totalQuestions}</p>
+            <p>Процент: {result.percent.toFixed(1)}%</p>
             <button className="primaryBtn" onClick={() => navigate("/")}>
-              Рљ С‚РµСЃС‚Р°Рј
+              К тестам
             </button>
           </article>
         ) : (
@@ -661,7 +661,7 @@ function SolveTestPage() {
               />
             ))}
             <button className="primaryBtn" onClick={submit}>
-              РћС‚РїСЂР°РІРёС‚СЊ
+              Отправить
             </button>
           </>
         )}
@@ -689,27 +689,27 @@ function PrivateTestPage() {
   }
 
   if (error) return <div className="appShell"><p className="errorText">{error}</p></div>;
-  if (!test) return <div className="appShell"><p className="mutedText">Р—Р°РіСЂСѓР·РєР°...</p></div>;
+  if (!test) return <div className="appShell"><p className="mutedText">Загрузка...</p></div>;
 
   return (
     <div className="appShell">
       <header className="topBar">
         <div>
-          <p className="topLabel">РўРµСЃС‚ РїРѕ РєРѕРґСѓ</p>
+          <p className="topLabel">Тест по коду</p>
           <h1>{test.title}</h1>
         </div>
         <button className="ghostBtn" onClick={() => navigate("/")}>
-          РќР°Р·Р°Рґ
+          Назад
         </button>
       </header>
 
       <main className="contentArea">
         {result ? (
           <article className="card">
-            <h2>Р РµР·СѓР»СЊС‚Р°С‚: {result.grade}/10</h2>
-            <p>РџСЂРѕС†РµРЅС‚: {result.percent.toFixed(1)}%</p>
+            <h2>Результат: {result.grade}/10</h2>
+            <p>Процент: {result.percent.toFixed(1)}%</p>
             <button className="primaryBtn" onClick={() => navigate("/")}>
-              Рљ С‚РµСЃС‚Р°Рј
+              К тестам
             </button>
           </article>
         ) : (
@@ -728,7 +728,7 @@ function PrivateTestPage() {
               />
             ))}
             <button className="primaryBtn" onClick={submit}>
-              РћС‚РїСЂР°РІРёС‚СЊ
+              Отправить
             </button>
           </>
         )}
@@ -740,18 +740,18 @@ function PrivateTestPage() {
 export default function App() {
   const { user, loading, error, setUser } = useSession();
 
-  if (loading) return <div className="appShell"><p className="mutedText">РџСЂРѕРІРµСЂРєР° Р°РІС‚РѕСЂРёР·Р°С†РёРё...</p></div>;
+  if (loading) return <div className="appShell"><p className="mutedText">Проверка авторизации...</p></div>;
   if (!user) {
     return (
       <div className="appShell">
         <header className="topBar">
           <div>
             <p className="topLabel">Spelling Tests</p>
-            <h1>РћС€РёР±РєР° РІС…РѕРґР°</h1>
+            <h1>Ошибка входа</h1>
           </div>
         </header>
         <main className="contentArea">
-          <p className="errorText">{error || "РќРµ СѓРґР°Р»РѕСЃСЊ Р°РІС‚РѕСЂРёР·РѕРІР°С‚СЊСЃСЏ"}</p>
+          <p className="errorText">{error || "Не удалось авторизоваться"}</p>
         </main>
       </div>
     );
