@@ -29,7 +29,7 @@ services:
     name: spelling-frontend
     runtime: node
     rootDir: frontend
-    buildCommand: npm install && npm run build
+    buildCommand: rm -rf node_modules package-lock.json && npm install --include=optional && npm install @rollup/rollup-linux-x64-gnu --no-save && npm run build
     startCommand: npm run preview -- --host 0.0.0.0 --port 10000
     envVars:
       - key: VITE_API_URL
@@ -41,3 +41,4 @@ databases:
   - name: spelling-db
     databaseName: spelling
     user: spelling_user
+
