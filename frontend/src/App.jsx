@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api, getTelegramInitData } from "./api";
 
+import { AdminStatsPage, AdminUserStatsPage } from "./AdminPages";
+import { getShareLink } from "./utils";
+import { SwipeableCard } from "./SwipeableCard";
+
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "";
+
 function displayName(user) {
   return user.firstName || user.username || `id${user.telegramId}`;
 }
@@ -24,13 +30,28 @@ async function copyText(value) {
   document.body.removeChild(input);
 }
 
+function extractStartTarget(initData) {
+  if (!initData) return "";
+  const params = new URLSearchParams(initData);
+  const raw = params.get("start_param");
+  if (!raw) return "";
+  try {
+    const decoded = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
+    return decoded.startsWith("/") ? decoded : `/${decoded}`;
+  } catch(e) {
+    return raw.startsWith("/") ? raw : `/${raw}`;
+  }
+}
+
 function useSession() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [startTarget, setStartTarget] = useState("");
 
   useEffect(() => {
     const initData = getTelegramInitData();
+    setStartTarget(extractStartTarget(initData));
     const token = localStorage.getItem("token");
 
     if (token) {
@@ -61,11 +82,12 @@ function useSession() {
       .finally(() => setLoading(false));
   }, []);
 
-  return { user, loading, error };
+  return { user, loading, error, startTarget };
 }
 
-function Shell({ user }) {
+function Shell({ user, startTarget }) {
   const [activeTab, setActiveTab] = useState("tests");
+  const navigate = useNavigate();
 
   const tabs = [
     { key: "tests", label: "Тесты" },
@@ -73,6 +95,12 @@ function Shell({ user }) {
     { key: "profile", label: "Мой профиль" }
   ];
   if (user.role === "ADMIN") tabs.push({ key: "add", label: "Добавить" });
+
+  useEffect(() => {
+    if (startTarget) {
+      navigate(startTarget);
+    }
+  }, [startTarget, navigate]);
 
   return (
     <div className="appShell">
@@ -208,7 +236,7 @@ function ProfileTab({ user }) {
 
   async function makeLink(test) {
     if (test.isPublic) {
-      setLinks((prev) => ({ ...prev, [test.id]: { url } }));
+      setLinks((prev) => ({ ...prev, [test.id]: { url: getShareLink(`/test/${test.id}`) } }));
       return;
     }
 
@@ -216,19 +244,12 @@ function ProfileTab({ user }) {
       method: "POST",
       body: JSON.stringify({ testId: test.id })
     });
-    const url = `${window.location.origin}/access/${data.token}`;
+    const url = getShareLink(`/access/${data.token}`);
     setLinks((prev) => ({ ...prev, [test.id]: { url, code: data.shortCode } }));
   }
 
   async function loadStats(test) {
-    const stats = await api(`/admin/tests/${test.id}/stats`);
-    setSelectedStats(stats);
-    setSelectedUserStats(null);
-  }
-
-  async function loadUserStats(testId, userId) {
-    const details = await api(`/admin/tests/${testId}/stats/users/${userId}`);
-    setSelectedUserStats(details);
+    navigate(`/admin/tests/${test.id}/stats`);
   }
 
   return (
@@ -294,51 +315,6 @@ function ProfileTab({ user }) {
               </article>
             ))}
           </div>
-
-          {selectedStats && (
-            <div className="cardList">
-              <article className="card">
-                <h3>Статистика: {selectedStats.test.title}</h3>
-                <p>Тип: {typeLabel(selectedStats.test.kind)}</p>
-                <p>Прохождений: {selectedStats.attemptsCount}</p>
-                <p>Уникальных пользователей: {selectedStats.uniqueUsers}</p>
-                <p>Средняя лучшая оценка: {selectedStats.avgGrade.toFixed(2)}</p>
-              </article>
-
-              {selectedStats.users.map((row) => (
-                <article className="card" key={row.user.id}>
-                  <h3>{row.user.firstName || row.user.username || row.user.telegramId}</h3>
-                  <p>Попыток: {row.attemptsCount}</p>
-                  <p>Лучшая оценка: {row.bestAttempt.grade}/10 ({row.bestAttempt.percent.toFixed(1)}%)</p>
-                  <button className="secondaryBtn" onClick={() => loadUserStats(selectedStats.test.id, row.user.id)}>
-                    Ответы пользователя
-                  </button>
-                </article>
-              ))}
-            </div>
-          )}
-
-          {selectedUserStats && (
-            <div className="cardList">
-              <article className="card">
-                <h3>Ответы: {selectedUserStats.user.firstName || selectedUserStats.user.username || selectedUserStats.user.telegramId}</h3>
-                <p>Набор: {selectedUserStats.test.title}</p>
-              </article>
-              {selectedUserStats.attempts.map((attempt) => (
-                <article className="card" key={attempt.attemptId}>
-                  <h3>Попытка: {attempt.grade}/10 ({attempt.percent.toFixed(1)}%)</h3>
-                  {attempt.answers.map((a) => (
-                    <div key={a.questionId} className="answerAuditRow">
-                      <p><b>{a.questionText}</b></p>
-                      <p>Ответ: {a.selected || "нет ответа"}</p>
-                      <p>Верно: {a.correct || "-"}</p>
-                      <p className={a.isCorrect ? "okText" : "errorText"}>{a.isCorrect ? "Правильно" : "Неправильно"}</p>
-                    </div>
-                  ))}
-                </article>
-              ))}
-            </div>
-          )}
         </>
       )}
     </section>
@@ -620,14 +596,14 @@ function AddTestTab() {
     });
 
     let text = "Набор создан";
-    let generatedLink = `${window.location.origin}/test/${created.id}`;
+    let generatedLink = getShareLink(`/test/${created.id}`);
 
     if (!payload.isPublic) {
       const access = await api("/tests/admin/create-link", {
         method: "POST",
         body: JSON.stringify({ testId: created.id })
       });
-      generatedLink = `${window.location.origin}/access/${access.token}`;
+      generatedLink = getShareLink(`/access/${access.token}`);
       text = `Приватный набор создан, код ${access.shortCode}`;
     }
 
@@ -742,18 +718,23 @@ function SolveFlow({ test, accessToken }) {
   const solved = Object.keys(checkedByQuestion).length;
   const isLast = currentIndex === questions.length - 1;
 
-  async function checkAnswer() {
-    if (!selected) {
+  async function checkAnswer(forcedAnswer) {
+    const ans = forcedAnswer || selected;
+    if (!ans) {
       setError("Выберите ответ");
       return;
     }
     setError("");
 
+    if (forcedAnswer) {
+      setAnswers((prev) => ({ ...prev, [currentQuestion.id]: forcedAnswer }));
+    }
+
     const response = await api(`/tests/${test.id}/check-answer`, {
       method: "POST",
       body: JSON.stringify({
         questionId: currentQuestion.id,
-        answer: selected,
+        answer: ans,
         accessToken
       })
     });
@@ -789,17 +770,22 @@ function SolveFlow({ test, accessToken }) {
       <article className="card"><p>Решено: {solved} из {questions.length}</p></article>
 
       {test.kind === "CARDS" ? (
-        <CardsCard
-          q={currentQuestion}
-          test={test}
-          selected={selected}
-          checked={checked}
-          feedback={feedback}
-          onSelect={(answer) => {
-            setFeedback(null);
-            setAnswers((prev) => ({ ...prev, [currentQuestion.id]: answer }));
-          }}
-        />
+        <>
+          <SwipeableCard
+            key={currentQuestion.id}
+            q={currentQuestion}
+            test={test}
+            disabled={checked}
+            onAnswer={(ans) => checkAnswer(ans)}
+          />
+          {checked && (
+            <div className="card" style={{ marginTop: 20 }}>
+              <p className={feedback?.isCorrect ? "okText" : "errorText"} style={{ fontSize: 20, textAlign: 'center', fontWeight: 'bold' }}>
+                {feedback?.isCorrect ? "Верно!" : "Неверно"}
+              </p>
+            </div>
+          )}
+        </>
       ) : (
         <QuestionCard
           q={currentQuestion}
@@ -816,20 +802,21 @@ function SolveFlow({ test, accessToken }) {
       {feedback?.explanation && <p className="explainText">{feedback.explanation}</p>}
       {error && <p className="errorText">{error}</p>}
 
-      {!checked && <button className="primaryBtn" onClick={checkAnswer}>Проверить</button>}
+      {!checked && test.kind !== "CARDS" && <button className="primaryBtn" onClick={() => checkAnswer()}>Проверить</button>}
       {checked && !isLast && (
         <button
           className="primaryBtn"
+          style={test.kind === "CARDS" ? { marginTop: 20 } : {}}
           onClick={() => {
             setCurrentIndex((prev) => prev + 1);
             setFeedback(null);
             setError("");
           }}
         >
-          Следующий вопрос
+          Следующая {test.kind === "CARDS" ? "карточка" : "вопрос"}
         </button>
       )}
-      {checked && isLast && <button className="primaryBtn" onClick={finish}>Посмотреть результаты</button>}
+      {checked && isLast && <button className="primaryBtn" style={test.kind === "CARDS" ? { marginTop: 20 } : {}} onClick={finish}>Посмотреть результаты</button>}
     </>
   );
 }
@@ -953,6 +940,8 @@ export default function App() {
       <Route path="/test/:id" element={<SolveTestPage />} />
       <Route path="/access/:token" element={<PrivateTestPage />} />
       <Route path="/admin/tests/:id/edit" element={<AdminEditTestPage user={user} />} />
+      <Route path="/admin/tests/:id/stats" element={<AdminStatsPage user={user} />} />
+      <Route path="/admin/tests/:id/stats/users/:userId" element={<AdminUserStatsPage user={user} />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
