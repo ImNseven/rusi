@@ -34,9 +34,10 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false
+      - key: VITE_BOT_USERNAME
+        sync: false
 
 databases:
   - name: spelling-db
     databaseName: spelling
     user: spelling_user
-
